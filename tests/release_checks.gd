@@ -39,7 +39,7 @@ func _run_checks() -> void:
     var packed := load("res://main.tscn") as PackedScene
     _check(packed != null, "main scene loads")
     if packed == null:
-        _finish()
+        call_deferred("_finish")
         return
 
     var game := packed.instantiate()
@@ -85,6 +85,8 @@ func _run_checks() -> void:
 
     game._start_run(3)
     await process_frame
+    _check(_count_items(game.board) == 6, "late chapters grant a viable recovered loadout")
+    _check(game.scrap >= 32, "late chapters grant additional workshop scrap")
     game.stage_index = 4
     game.start_battle()
     await process_frame
@@ -97,8 +99,12 @@ func _run_checks() -> void:
     _check(game.save_data["active_run"].is_empty(), "completed run is cleared")
 
     game.queue_free()
-    await process_frame
-    _finish()
+    for _frame in range(4):
+        await process_frame
+    # Let this coroutine return before quitting. Its local PackedScene and
+    # instantiated scene references would otherwise still be alive while
+    # Godot tears down the ResourceLoader cache, producing false leak noise.
+    call_deferred("_finish")
 
 func _check_catalog_resources() -> void:
     for id in GameDataRef.ITEMS:

@@ -403,7 +403,7 @@ func show_chapter_select() -> void:
 func _start_run(idx: int) -> void:
     chapter_index = idx
     stage_index = 0
-    scrap = 20 + int(save_data["purse_knot"]) * 2
+    scrap = 20 + chapter_index * 4 + int(save_data["purse_knot"]) * 2
     selected_slot = -1
     run_seed = rng.randi_range(100000, 999999999)
     rng.seed = run_seed
@@ -414,6 +414,12 @@ func _start_run(idx: int) -> void:
     board[6] = {"id":"blade", "tier":1}
     board[7] = {"id":"thread", "tier":1}
     board[11] = {"id":"buckler", "tier":1}
+    if chapter_index >= 1:
+        board[8] = {"id":"boot", "tier":1}
+    if chapter_index >= 2:
+        board[12] = {"id":"sigil", "tier":1}
+    if chapter_index >= 3:
+        board[13] = {"id":"lantern", "tier":1}
     _roll_shop(true)
     save_data["runs"] = int(save_data["runs"]) + 1
     _persist_active_run("prepare")

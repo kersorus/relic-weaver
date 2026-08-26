@@ -131,4 +131,4 @@ static func item_cost(id: String, tier: int = 1) -> int:
     return int(ITEMS[id]["base_cost"] * (1.0 + 0.6 * (tier - 1)))
 
 static func chapter_scale(chapter: int, stage: int) -> float:
-    return 1.0 + chapter * 0.42 + stage * 0.11
+    return 1.0 + chapter * 0.25 + stage * 0.10

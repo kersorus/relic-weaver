@@ -5,6 +5,8 @@
 - Fixed the Godot 4.3 startup parse failure caused by the reserved `trait` identifier.
 - Fixed the workshop runtime failure caused by the unsupported Godot 4.3 `Button.icon_max_width` property.
 - Added a complete fourth chapter, three original enemies and the final boss encounter.
+- Added recovered starter artifacts and extra scrap to later chapters so their opening fights remain fair.
+- Retuned chapter scaling for a smoother campaign curve while preserving a demanding final boss.
 - Replaced the three prototype backdrops with detailed portrait pixel-art environments and added a final loom arena.
 - Added animated workshop connection lines, selected-slot pulse, ambient background motion and improved combat grounding.
 - Added pause controls, reduced-motion and screen-shake options, and four-step SFX volume control.
