@@ -37,8 +37,6 @@ jobs:
         with:
           path: .godot/imported
           key: godot-import-${{ env.GODOT_VERSION }}-${{ hashFiles('project.godot', 'main.tscn', 'src/**/*.gd', 'assets/**/*.png', 'assets/**/*.wav') }}
-          restore-keys: |
-            godot-import-${{ env.GODOT_VERSION }}-
 
       - name: Prepare Godot CI environment
         shell: bash
@@ -112,6 +110,8 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          grep -q '^textures/vram_compression/import_etc2_astc=true$' project.godot
+          grep -q '^textures/vram_compression/import_s3tc_bptc=true$' project.godot
           godot --headless --editor --path . --quit
 
       - name: Build Android debug APK
