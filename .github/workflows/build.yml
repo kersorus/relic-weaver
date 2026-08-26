@@ -17,12 +17,14 @@ concurrency:
 env:
   GODOT_VERSION: '4.3'
   EXPORT_NAME: 'RelicWeaver'
+  JAVA_HOME: '/usr/lib/jvm/java-17-openjdk-amd64'
+  ANDROID_HOME: '/usr/lib/android-sdk'
 
 jobs:
   export:
     name: Validate and export
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 35
     container:
       image: barichello/godot-ci:4.3
 
@@ -42,21 +44,69 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p "$HOME/.local/share/godot/export_templates" "$HOME/.config" \
-                   build/android build/linux build/windows
 
-          if [ -d "/root/.local/share/godot/export_templates/${GODOT_VERSION}.stable" ] && \
-             [ ! -d "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable" ]; then
-            mv "/root/.local/share/godot/export_templates/${GODOT_VERSION}.stable" \
-               "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p \
+            "$HOME/.config/godot" \
+            "$HOME/.local/share/godot/export_templates" \
+            build/android build/linux build/windows
+
+          # GitHub Actions changes HOME inside a container.  godot-ci prepares
+          # its editor settings, export templates and debug keystore under
+          # /root, so make the settings/templates visible to the actual HOME.
+          if [ -d /root/.config/godot ]; then
+            cp -a /root/.config/godot/. "$HOME/.config/godot/"
           fi
 
+          TEMPLATE_DIR="/root/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          if [ -d "$TEMPLATE_DIR" ]; then
+            rm -rf "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+            cp -a "$TEMPLATE_DIR" "$HOME/.local/share/godot/export_templates/"
+          fi
+
+          # Do not rely on whatever HOME the runner/container happens to use.
+          # Create the Android editor settings explicitly for Godot 4.3.
           SETTINGS="$HOME/.config/godot/editor_settings-4.3.tres"
-          if [ -f "$SETTINGS" ] && ! grep -q 'export/android/java_sdk_path' "$SETTINGS"; then
-            echo 'export/android/java_sdk_path = "/usr/lib/jvm/java-17-openjdk-amd64"' >> "$SETTINGS"
+          cat > "$SETTINGS" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/debug_keystore = "/root/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          export/android/force_system_user = false
+          export/android/timestamping_authority_url = ""
+          export/android/shutdown_adb_on_exit = true
+          EOF
+
+          test -x "$JAVA_HOME/bin/java"
+          test -x "$ANDROID_HOME/platform-tools/adb"
+          test -f /root/debug.keystore
+          test -d "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+
+          # Godot 4.3 expects Android SDK/Build Tools 34. godot-ci:4.3 may only
+          # contain 33.0.2, so install 34 only when the image does not have it.
+          if [ ! -d "$ANDROID_HOME/build-tools/34.0.0" ] || \
+             [ ! -d "$ANDROID_HOME/platforms/android-34" ]; then
+            yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/dev/null || true
+            sdkmanager --sdk_root="$ANDROID_HOME" \
+              "platform-tools" \
+              "build-tools;34.0.0" \
+              "platforms;android-34"
           fi
 
-          godot --version
+          echo "Godot: $(godot --version)"
+          echo "Java:  $($JAVA_HOME/bin/java -version 2>&1 | head -n 1)"
+          echo "Android build-tools:"
+          ls -1 "$ANDROID_HOME/build-tools"
+          echo "Android platforms:"
+          ls -1 "$ANDROID_HOME/platforms"
+
+          keytool -list \
+            -keystore /root/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey >/dev/null
 
       - name: Import project and validate scripts/resources
         shell: bash
@@ -66,9 +116,13 @@ jobs:
 
       - name: Build Android debug APK
         shell: bash
+        env:
+          GODOT_ANDROID_KEYSTORE_DEBUG_PATH: /root/debug.keystore
+          GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
+          GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
         run: |
           set -euxo pipefail
-          godot --headless --path . \
+          godot --headless --verbose --path . \
             --export-debug "Android" \
             "build/android/${EXPORT_NAME}-debug.apk"
 

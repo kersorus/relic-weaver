@@ -1,5 +1,12 @@
 # Changelog
 
+## CI hotfix (2026-08-26)
+
+- Fixed Android GitHub Actions export: JDK and debug keystore are now visible to Godot inside the container.
+- Added explicit Android SDK/JDK editor settings and debug-keystore environment variables.
+- CI installs Android Platform/Build Tools 34 when missing from `godot-ci:4.3`.
+
+
 ## 0.3.0
 
 - Added battle speed toggle ×1 / ×2.
