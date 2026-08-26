@@ -114,6 +114,18 @@ jobs:
           grep -q '^textures/vram_compression/import_s3tc_bptc=true$' project.godot
           godot --headless --editor --path . --quit
 
+      - name: Runtime smoke test
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -f runtime-smoke.log
+          godot --headless --path . --quit-after 12 --log-file runtime-smoke.log
+          cat runtime-smoke.log
+          if ! grep -q 'RELIC_WEAVER_BOOT_OK' runtime-smoke.log; then
+            echo 'Main scene did not reach RELIC_WEAVER_BOOT_OK' >&2
+            exit 1
+          fi
+
       - name: Build Android debug APK
         shell: bash
         env:

@@ -23,3 +23,9 @@
 - Replaced placeholder sprites with generated pixel-art assets.
 - Added Android/Linux/Windows GitHub Actions exports.
 - Added tagged GitHub Releases.
+
+## v0.3.1 runtime boot diagnostics
+- Added a static boot scene so startup failures no longer look like an infinite gray screen.
+- Main game reports `RELIC_WEAVER_BOOT_OK` after the home screen is constructed.
+- GitHub Actions now runs the actual main scene as a headless runtime smoke test before exporting.
+- Default clear color changed from Godot gray to the game's dark background.

@@ -59,10 +59,15 @@ var sfx_hit: AudioStreamPlayer
 var sfx_victory: AudioStreamPlayer
 
 func _ready() -> void:
+    print("RW_GAME: _ready begin")
     rng.randomize()
     save_data = SaveManagerRef.load_save()
+    print("RW_GAME: save loaded")
     _setup_audio()
+    print("RW_GAME: audio configured")
     show_home()
+    set_meta("boot_ok", true)
+    print("RELIC_WEAVER_BOOT_OK")
 
 func _process(delta: float) -> void:
     if battle_active:
