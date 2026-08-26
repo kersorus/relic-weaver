@@ -613,7 +613,7 @@ func start_battle() -> void:
 
     var hero_name := _label("Связующий", 22, C_TEXT); hero_name.position=Vector2(20,160); hero_name.size=Vector2(250,40); combat_area.add_child(hero_name)
     var enemy_name := _label(enemy_data["name"], 22, C_TEXT, HORIZONTAL_ALIGNMENT_RIGHT); enemy_name.position=Vector2(370,160); enemy_name.size=Vector2(280,40); combat_area.add_child(enemy_name)
-    var trait := _label(enemy_data["trait"], 17, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT); trait.position=Vector2(350,200); trait.size=Vector2(300,50); combat_area.add_child(trait)
+    var trait_label := _label(enemy_data["trait"], 17, C_MUTED, HORIZONTAL_ALIGNMENT_RIGHT); trait_label.position=Vector2(350,200); trait_label.size=Vector2(300,50); combat_area.add_child(trait_label)
 
     hero_hp_bar = _hp_bar(hero_max_hp, hero_hp); hero_hp_bar.position=Vector2(20,460); hero_hp_bar.size=Vector2(280,28); combat_area.add_child(hero_hp_bar)
     enemy_hp_bar = _hp_bar(enemy_max_hp, enemy_hp); enemy_hp_bar.position=Vector2(360,460); enemy_hp_bar.size=Vector2(280,28); combat_area.add_child(enemy_hp_bar)
