@@ -1,6 +1,6 @@
 # Обновление существующего репозитория из Termux
 
-Архив `relic_weaver_v0.3_update.zip` содержит файлы проекта **без `.git`** и предназначен для распаковки поверх уже существующего checkout.
+Архив `relic_weaver_v1.0_update.zip` содержит файлы проекта **без `.git`** и предназначен для распаковки поверх уже существующего checkout.
 
 ```bash
 cd ~/relic-weaver
@@ -8,12 +8,12 @@ cd ~/relic-weaver
 git status
 git pull --rebase
 
-unzip -o ~/storage/downloads/relic_weaver_v0.3_update.zip -d .
+unzip -o ~/storage/downloads/relic_weaver_v1.0_update.zip -d .
 rm -f test_write
 
 git status
 git add -A
-git commit -m "Update Relic Weaver to v0.3"
+git commit -m "Release Relic Weaver v1.0"
 git push origin main
 ```
 
@@ -22,6 +22,6 @@ git push origin main
 Для release:
 
 ```bash
-git tag v0.3.0
-git push origin v0.3.0
+git tag v1.0.0
+git push origin v1.0.0
 ```

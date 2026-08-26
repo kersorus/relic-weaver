@@ -112,7 +112,13 @@ jobs:
           set -euxo pipefail
           grep -q '^textures/vram_compression/import_etc2_astc=true$' project.godot
           grep -q '^textures/vram_compression/import_s3tc_bptc=true$' project.godot
-          godot --headless --editor --path . --quit
+          rm -f import-validation.log
+          godot --headless --editor --path . --quit --log-file import-validation.log
+          cat import-validation.log
+          if grep -Eq 'SCRIPT ERROR|Failed to load script' import-validation.log; then
+            echo 'Godot import reported a script failure' >&2
+            exit 1
+          fi
 
       - name: Runtime smoke test
         shell: bash
@@ -123,6 +129,25 @@ jobs:
           cat runtime-smoke.log
           if ! grep -q 'RELIC_WEAVER_BOOT_OK' runtime-smoke.log; then
             echo 'Main scene did not reach RELIC_WEAVER_BOOT_OK' >&2
+            exit 1
+          fi
+          if grep -Eq 'SCRIPT ERROR|RW_BOOT_FAIL' runtime-smoke.log; then
+            echo 'Runtime smoke test reported a script failure' >&2
+            exit 1
+          fi
+
+      - name: Release gameplay checks
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -f release-checks.log
+          godot --headless --path . \
+            --script tests/release_checks.gd \
+            --log-file release-checks.log
+          cat release-checks.log
+          grep -q 'RELIC_WEAVER_RELEASE_CHECKS_OK' release-checks.log
+          if grep -Eq 'SCRIPT ERROR|RW_CHECK_FAIL' release-checks.log; then
+            echo 'Release gameplay checks reported a failure' >&2
             exit 1
           fi
 

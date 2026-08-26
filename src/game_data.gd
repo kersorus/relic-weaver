@@ -9,7 +9,7 @@ const BOARD_SIZE := BOARD_COLS * BOARD_ROWS
 const ITEMS := {
     "blade": {
         "name": "Клинок сторожа", "kind": "Оружие", "icon": "res://assets/items/blade.png",
-        "desc": "+атака. Каждые несколько ударов наносит рубящий бонус.",
+        "desc": "+атака. Каждый четвёртый удар наносит рубящий бонус.",
         "base_cost": 6, "weight": 14, "tags": ["steel", "strike"]
     },
     "buckler": {
@@ -73,7 +73,7 @@ const CHAPTERS := [
     {
         "name": "I. Под старой церковью",
         "short": "Старая церковь",
-        "background": "res://assets/backgrounds/chapel.png",
+        "background": "res://assets/backgrounds/chapel_v2.png",
         "prop": "res://assets/props/church_door.png",
         "intro": "Отец говорил, что колокол нельзя трогать после заката. После его смерти под церковью впервые за несколько веков ответило что-то другое.",
         "outro": "Каменная дверь открылась не наружу, а будто в память. Из темноты потянулась тонкая светящаяся связь — и выбрала тебя.",
@@ -82,7 +82,7 @@ const CHAPTERS := [
     {
         "name": "II. Дорога, которой не было",
         "short": "Имперская дорога",
-        "background": "res://assets/backgrounds/road.png",
+        "background": "res://assets/backgrounds/road_v2.png",
         "prop": "res://assets/props/gravestone.png",
         "intro": "До столицы семь дней пути. Но после пробуждения дороги стали вести себя странно: знакомые мосты повторялись, а чужие люди называли тебя по имени.",
         "outro": "У ворот столицы стражник протянул пропуск, выписанный вчера твоим почерком. Ты никогда прежде не видел этот город.",
@@ -91,11 +91,20 @@ const CHAPTERS := [
     {
         "name": "III. Архив часовой башни",
         "short": "Городской архив",
-        "background": "res://assets/backgrounds/archive.png",
+        "background": "res://assets/backgrounds/archive_v2.png",
         "prop": "res://assets/props/bookshelf.png",
         "intro": "В архиве нет книги о древнем маге. Зато есть книги, в которых вычеркнуты ровно те страницы, что должны были о нём рассказать.",
         "outro": "В полночь часы пошли назад. На последней чистой странице проступила фраза: «Связь не передаёт силу. Она решает, где сила уже была».",
         "enemies": ["ink_scribe", "clock_husk", "ink_scribe", "old_warden", "bound_mage"]
+    },
+    {
+        "name": "IV. Мастерская первого узла",
+        "short": "Первый узел",
+        "background": "res://assets/backgrounds/loom.png",
+        "prop": "res://assets/props/clock_mechanism.png",
+        "intro": "За последней страницей архива оказалась лестница вниз. Там, где город слышал бой часов, древний станок всё это время переплетал чужие решения — и называл получившийся узор судьбой.",
+        "outro": "Под маской Первого не было лица — только узел из тысяч несделанных выборов. Ты перерезал управляющую нить. Мир не стал прежним, но дороги снова начали вести вперёд, а связь отныне принадлежала тем, кто её создаёт.",
+        "enemies": ["thread_wraith", "clock_husk", "brass_seraph", "bound_mage", "first_weaver"]
     }
 ]
 
@@ -106,7 +115,10 @@ const ENEMIES := {
     "ink_scribe": {"name":"Чернильный писец", "sprite":"res://assets/actors/ink_scribe.png", "hp":132.0, "atk":17.0, "speed":0.90, "reward":10, "trait":"Порча: усиливается со временем"},
     "old_warden": {"name":"Последний сторож", "sprite":"res://assets/actors/old_warden.png", "hp":220.0, "atk":20.0, "speed":0.76, "reward":13, "trait":"Блокирует часть ударов"},
     "clock_husk": {"name":"Пустой часовой", "sprite":"res://assets/actors/clock_husk.png", "hp":184.0, "atk":18.0, "speed":1.02, "reward":12, "trait":"Ускоряется при низком здоровье"},
-    "bound_mage": {"name":"Связанный маг", "sprite":"res://assets/actors/bound_mage.png", "hp":300.0, "atk":24.0, "speed":0.84, "reward":18, "trait":"Босс: импульс связи"}
+    "bound_mage": {"name":"Связанный маг", "sprite":"res://assets/actors/bound_mage.png", "hp":300.0, "atk":24.0, "speed":0.84, "reward":18, "trait":"Босс: импульс связи"},
+    "thread_wraith": {"name":"Нитяной призрак", "sprite":"res://assets/actors/thread_wraith.png", "hp":205.0, "atk":21.0, "speed":1.10, "reward":14, "trait":"Каждый пятый удар уходит в нить"},
+    "brass_seraph": {"name":"Латунный серафим", "sprite":"res://assets/actors/brass_seraph.png", "hp":265.0, "atk":25.0, "speed":0.82, "reward":17, "trait":"Латунный панцирь: −18% урона"},
+    "first_weaver": {"name":"Первый Связующий", "sprite":"res://assets/actors/first_weaver.png", "hp":440.0, "atk":30.0, "speed":0.90, "reward":26, "trait":"Финальный босс: переписывает ритм"}
 }
 
 static func tier_name(tier: int) -> String:
