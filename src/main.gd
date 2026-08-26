@@ -48,6 +48,10 @@ var hero_actor: TextureRect
 var enemy_actor: TextureRect
 var battle_continue_button: Button
 var current_bg: TextureRect
+var combat_area: Control
+var slot_buttons: Array = []
+var battle_speed := 1.0
+var loot_choices: Array = []
 
 var sfx_click: AudioStreamPlayer
 var sfx_merge: AudioStreamPlayer
@@ -62,7 +66,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
     if battle_active:
-        _battle_tick(delta)
+        _battle_tick(delta * battle_speed)
 
 func _setup_audio() -> void:
     sfx_click = AudioStreamPlayer.new()
@@ -113,6 +117,15 @@ func _label(text: String, size := 26, color := C_TEXT, align := HORIZONTAL_ALIGN
     l.horizontal_alignment = align
     l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     return l
+
+func _art(path: String, min_size := Vector2(128, 128)) -> TextureRect:
+    var t := TextureRect.new()
+    t.texture = load(path)
+    t.custom_minimum_size = min_size
+    t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    return t
 
 func _button(text: String, callback: Callable, min_height := 64, accent := false) -> Button:
     var b := Button.new()
@@ -247,7 +260,9 @@ func show_story_card(is_intro: bool) -> void:
     _set_background(ch["background"])
     var v := _main_vbox(160, 32, 20)
     var p := _panel(); var box := VBoxContainer.new(); box.add_theme_constant_override("separation", 18)
-    box.add_child(_label(ch["name"], 34, C_TEXT))
+    var chapter_art := _art(ch["prop"], Vector2(0, 220))
+    box.add_child(chapter_art)
+    box.add_child(_label(ch["name"], 34, C_TEXT, HORIZONTAL_ALIGNMENT_CENTER))
     box.add_child(_label(ch["intro"] if is_intro else ch["outro"], 24, C_TEXT))
     box.add_child(_button("Собрать мастерскую" if is_intro else "Вернуться в лагерь", show_prepare if is_intro else show_home, 70, true))
     p.add_child(_margin(box, 24)); v.add_child(p)
@@ -270,8 +285,11 @@ func show_prepare() -> void:
 
     var grid_panel := _panel()
     var grid := GridContainer.new(); grid.columns = GameDataRef.BOARD_COLS; grid.add_theme_constant_override("h_separation", 7); grid.add_theme_constant_override("v_separation", 7)
+    slot_buttons.clear()
     for i in range(GameDataRef.BOARD_SIZE):
-        grid.add_child(_make_slot(i))
+        var slot_button := _make_slot(i)
+        slot_buttons.append(slot_button)
+        grid.add_child(slot_button)
     grid_panel.add_child(_margin(grid, 12)); v.add_child(grid_panel)
 
     var selected_text := _label(_selected_description(), 18, C_TEXT)
@@ -331,13 +349,50 @@ func _slot_pressed(index: int) -> void:
         if dst == null:
             board[index] = src; board[selected_slot] = null; selected_slot = -1
         elif src["id"] == dst["id"] and int(src["tier"]) == int(dst["tier"]) and int(src["tier"]) < GameDataRef.MAX_TIER:
-            board[index] = {"id":src["id"], "tier":int(src["tier"]) + 1}
+            var merged_id: String = src["id"]
+            board[index] = {"id":merged_id, "tier":int(src["tier"]) + 1}
             board[selected_slot] = null
             selected_slot = -1
             sfx_merge.play()
+            _play_merge_fx(index, merged_id)
+            get_tree().create_timer(0.28).timeout.connect(show_prepare, CONNECT_ONE_SHOT)
+            return
         else:
             board[selected_slot] = dst; board[index] = src; selected_slot = index
     show_prepare()
+
+func _play_merge_fx(index: int, item_id: String) -> void:
+    if index < 0 or index >= slot_buttons.size(): return
+    var slot: Button = slot_buttons[index]
+    if not is_instance_valid(slot): return
+    var local_rect := slot.get_global_rect()
+    local_rect.position -= screen_root.global_position
+
+    var glow := Panel.new()
+    glow.position = local_rect.position - Vector2(6, 6)
+    glow.size = local_rect.size + Vector2(12, 12)
+    glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    glow.add_theme_stylebox_override("panel", _style_box(Color(0.35, 0.90, 0.78, 0.18), 18, C_ACCENT, 4))
+    screen_root.add_child(glow)
+
+    var icon := TextureRect.new()
+    icon.texture = load(GameDataRef.ITEMS[item_id]["icon"])
+    icon.position = local_rect.position + local_rect.size * 0.5 - Vector2(48, 48)
+    icon.size = Vector2(96, 96)
+    icon.pivot_offset = icon.size * 0.5
+    icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    screen_root.add_child(icon)
+
+    var tw := icon.create_tween()
+    tw.set_parallel(true)
+    tw.tween_property(icon, "scale", Vector2(1.55, 1.55), 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+    tw.tween_property(icon, "modulate", Color(1.0, 1.0, 1.0, 0.0), 0.28)
+    var gw := glow.create_tween()
+    gw.set_parallel(true)
+    gw.tween_property(glow, "scale", Vector2(1.12, 1.12), 0.28)
+    gw.tween_property(glow, "modulate", Color(1,1,1,0), 0.28)
 
 func _selected_description() -> String:
     if selected_slot < 0 or board[selected_slot] == null:
@@ -530,12 +585,23 @@ func start_battle() -> void:
     bell_timer = 2.8
     regen_timer = 1.0
     enemy_hit_count = 0; hero_attack_count = 0; enemy_stun = 0.0; mirror_charge = false
+    battle_speed = 1.0
 
     _set_background(GameDataRef.CHAPTERS[chapter_index]["background"])
     var v := _main_vbox(28, 28, 14)
-    v.add_child(_label("Бой %d/5" % (stage_index + 1), 25, C_GOLD, HORIZONTAL_ALIGNMENT_CENTER))
+    var battle_head := HBoxContainer.new()
+    battle_head.add_theme_constant_override("separation", 10)
+    var battle_title := _label("Бой %d/5" % (stage_index + 1), 25, C_GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+    battle_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    battle_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    battle_head.add_child(battle_title)
+    var speed_button := _button("×1", _toggle_battle_speed, 48)
+    speed_button.name = "BattleSpeedButton"
+    speed_button.custom_minimum_size.x = 74
+    battle_head.add_child(speed_button)
+    v.add_child(battle_head)
 
-    var combat_area := Control.new(); combat_area.custom_minimum_size.y = 590; v.add_child(combat_area)
+    combat_area = Control.new(); combat_area.custom_minimum_size.y = 590; v.add_child(combat_area)
     hero_actor = _actor_texture("res://assets/actors/hero.png", Vector2(80, 250)); combat_area.add_child(hero_actor)
     enemy_actor = _actor_texture(enemy_data["sprite"], Vector2(430, 250)); combat_area.add_child(enemy_actor)
     var versus := _label("×", 44, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER); versus.position=Vector2(313,312); versus.size=Vector2(64,64); combat_area.add_child(versus)
@@ -555,12 +621,26 @@ func start_battle() -> void:
     battle_continue_button = _button("...", _noop, 68, true); battle_continue_button.visible=false; v.add_child(battle_continue_button)
     _update_battle_ui()
     battle_active = true
+    _spawn_battle_caption("СВЯЗЬ", Vector2(330, 340), C_ACCENT)
 
 func _actor_texture(path: String, pos: Vector2) -> TextureRect:
-    var t := TextureRect.new(); t.texture=load(path); t.position=pos; t.size=Vector2(210,210); t.expand_mode=TextureRect.EXPAND_IGNORE_SIZE; t.stretch_mode=TextureRect.STRETCH_KEEP_ASPECT_CENTERED; return t
+    var t := TextureRect.new()
+    t.texture = load(path)
+    t.position = pos
+    t.size = Vector2(210,210)
+    t.pivot_offset = t.size * 0.5
+    t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    return t
 
 func _hp_bar(maxv: float, value: float) -> ProgressBar:
     var b := ProgressBar.new(); b.max_value=maxv; b.value=value; b.show_percentage=false; b.add_theme_stylebox_override("background", _style_box(Color("2b303c"),8)); b.add_theme_stylebox_override("fill", _style_box(C_ACCENT,8)); return b
+
+func _toggle_battle_speed() -> void:
+    battle_speed = 2.0 if battle_speed < 1.5 else 1.0
+    if screen_root != null:
+        var b := screen_root.find_child("BattleSpeedButton", true, false) as Button
+        if b != null: b.text = "×2" if battle_speed > 1.5 else "×1"
 
 func _battle_tick(delta: float) -> void:
     hero_timer -= delta
@@ -569,21 +649,27 @@ func _battle_tick(delta: float) -> void:
     bell_timer -= delta
     regen_timer -= delta
     enemy_stun = max(0.0, enemy_stun - delta)
+    _animate_idle(hero_actor, Time.get_ticks_msec() * 0.001, 0.018)
+    _animate_idle(enemy_actor, Time.get_ticks_msec() * 0.001 + 1.3, -0.016)
 
     if hero_timer <= 0.0:
         _hero_attack()
         hero_timer = max(0.25, 1.0 / float(battle_stats["attack_speed"]))
     if magic_timer <= 0.0 and float(battle_stats["magic"]) > 0:
         var dmg := float(battle_stats["magic"]) * float(battle_stats["damage_mult"])
-        _damage_enemy(dmg, "Знак связи вспыхивает: −%d" % int(dmg))
+        _spawn_battle_icon("res://assets/items/sigil.png", enemy_actor, C_ACCENT)
+        _damage_enemy(dmg, "Знак связи вспыхивает: −%d" % int(dmg), C_ACCENT)
         magic_timer = max(0.72, 2.45 - float(battle_stats["link_score"]) * 0.018)
     if bell_timer <= 0.0 and float(battle_stats["bell"]) > 0:
         var dmg := float(battle_stats["bell"])
         enemy_stun = 0.52
-        _damage_enemy(dmg, "Колокол сбивает ритм: −%d" % int(dmg))
+        _spawn_battle_icon("res://assets/items/bell.png", enemy_actor, Color("c39cff"))
+        _damage_enemy(dmg, "Колокол сбивает ритм: −%d" % int(dmg), Color("c39cff"))
         bell_timer = 3.6
     if regen_timer <= 0.0 and float(battle_stats["regen"]) > 0:
+        var healed := min(float(battle_stats["regen"]), hero_max_hp - hero_hp)
         hero_hp = min(hero_max_hp, hero_hp + float(battle_stats["regen"]))
+        if healed > 0.1: _floating_text("+%d" % int(healed), hero_actor, C_ACCENT)
         regen_timer = 1.0
     if enemy_timer <= 0.0 and enemy_stun <= 0.0:
         _enemy_attack()
@@ -591,6 +677,13 @@ func _battle_tick(delta: float) -> void:
         if enemy_data["name"] == "Пустой часовой" and enemy_hp < enemy_max_hp * 0.5: speed *= 1.35
         enemy_timer = 1.0 / speed
     _update_battle_ui()
+
+func _animate_idle(node: Control, phase: float, amount: float) -> void:
+    if node == null or not is_instance_valid(node): return
+    if node.modulate.a < 0.1: return
+    node.rotation = sin(phase * 2.1) * amount
+    var breathe := 1.0 + sin(phase * 2.8) * 0.012
+    node.scale = Vector2(breathe, breathe)
 
 func _hero_attack() -> void:
     hero_attack_count += 1
@@ -601,17 +694,20 @@ func _hero_attack() -> void:
     if enemy_data["name"] == "Сломанный дозорный": dmg *= 0.86
     if enemy_data["name"] == "Последний сторож" and rng.randf() < 0.20: dmg *= 0.55
     var text := ("Критический удар" if critical else "Удар") + ": −%d" % int(dmg)
-    _damage_enemy(dmg, text)
+    _animate_attack(hero_actor, 22.0)
+    _damage_enemy(dmg, text, C_GOLD if critical else C_TEXT)
     var heal := dmg * float(battle_stats["lifesteal"])
-    if heal > 0: hero_hp = min(hero_max_hp, hero_hp + heal)
-    _nudge(hero_actor, 18.0)
+    if heal > 0:
+        hero_hp = min(hero_max_hp, hero_hp + heal)
+        _floating_text("+%d" % int(heal), hero_actor, Color("7ee4a8"))
 
 func _enemy_attack() -> void:
     enemy_hit_count += 1
     if rng.randf() < float(battle_stats["dodge"]):
         battle_log_label.text = "Ты уходишь с линии удара. Зеркало запоминает движение."
         mirror_charge = _has_item("mirror")
-        _nudge(hero_actor, -10.0)
+        _animate_dodge(hero_actor)
+        _floating_text("УКЛОН", hero_actor, C_ACCENT)
         return
     var raw := float(enemy_data["atk"]) * GameDataRef.chapter_scale(chapter_index, stage_index)
     if enemy_data["name"] == "Тень прихожанина" and enemy_hit_count % 3 == 0: raw *= 1.65
@@ -620,23 +716,108 @@ func _enemy_attack() -> void:
     var reduced := max(1.0, raw - float(battle_stats["armor"])) * float(battle_stats["guard_mult"])
     hero_hp -= reduced
     battle_log_label.text = "%s наносит %d урона." % [enemy_data["name"], int(reduced)]
-    sfx_hit.play(); _nudge(enemy_actor, -16.0)
+    sfx_hit.play()
+    _animate_attack(enemy_actor, -22.0)
+    _floating_text("-%d" % int(reduced), hero_actor, C_DANGER)
     if hero_hp <= 0:
         hero_hp=0
+        _animate_death(hero_actor, -1.0)
         _battle_defeat()
+    else:
+        _animate_hit(hero_actor)
 
-func _damage_enemy(dmg: float, text: String) -> void:
+func _damage_enemy(dmg: float, text: String, fx_color := C_TEXT) -> void:
     enemy_hp -= dmg
     battle_log_label.text = text
     sfx_hit.play()
+    _floating_text("-%d" % int(dmg), enemy_actor, fx_color)
     if enemy_hp <= 0:
         enemy_hp = 0
+        _animate_death(enemy_actor, 1.0)
         _battle_victory()
+    else:
+        _animate_hit(enemy_actor)
 
-func _nudge(node: Control, dx: float) -> void:
-    if node == null: return
+func _animate_attack(node: Control, dx: float) -> void:
+    if node == null or not is_instance_valid(node): return
     var origin := node.position
-    var tw := create_tween(); tw.tween_property(node,"position",origin+Vector2(dx,0),0.06); tw.tween_property(node,"position",origin,0.09)
+    var tw := node.create_tween()
+    tw.tween_property(node, "position", origin + Vector2(dx, -4), 0.065).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+    tw.tween_property(node, "position", origin, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+func _animate_hit(node: Control) -> void:
+    if node == null or not is_instance_valid(node): return
+    var origin := node.position
+    var flash := node.create_tween()
+    flash.tween_property(node, "modulate", Color(1.0, 0.55, 0.55, 1.0), 0.055)
+    flash.tween_property(node, "modulate", Color.WHITE, 0.09)
+    var shake := node.create_tween()
+    shake.tween_property(node, "position", origin + Vector2(8, 0), 0.035)
+    shake.tween_property(node, "position", origin - Vector2(6, 0), 0.035)
+    shake.tween_property(node, "position", origin, 0.05)
+
+func _animate_dodge(node: Control) -> void:
+    if node == null or not is_instance_valid(node): return
+    var origin := node.position
+    var tw := node.create_tween()
+    tw.tween_property(node, "position", origin + Vector2(-26, -5), 0.07).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+    tw.tween_property(node, "position", origin, 0.13).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+func _animate_death(node: Control, direction: float) -> void:
+    if node == null or not is_instance_valid(node): return
+    var tw := node.create_tween()
+    tw.set_parallel(true)
+    tw.tween_property(node, "rotation", direction * 0.32, 0.38).set_trans(Tween.TRANS_BACK)
+    tw.tween_property(node, "position", node.position + Vector2(direction * 24.0, 28.0), 0.38)
+    tw.tween_property(node, "scale", Vector2(0.82, 0.82), 0.38)
+    tw.tween_property(node, "modulate", Color(0.7, 0.7, 0.78, 0.15), 0.42)
+
+func _floating_text(text: String, actor: Control, color: Color) -> void:
+    if combat_area == null or actor == null or not is_instance_valid(actor): return
+    var l := _label(text, 24, color, HORIZONTAL_ALIGNMENT_CENTER)
+    l.position = actor.position + Vector2(35, 15)
+    l.size = Vector2(140, 42)
+    l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    combat_area.add_child(l)
+    var tw := l.create_tween()
+    tw.set_parallel(true)
+    tw.tween_property(l, "position", l.position + Vector2(0, -54), 0.55).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+    tw.tween_property(l, "modulate", Color(color.r, color.g, color.b, 0.0), 0.55)
+    tw.chain().tween_callback(l.queue_free)
+
+func _spawn_battle_icon(path: String, actor: Control, tint: Color) -> void:
+    if combat_area == null or actor == null or not is_instance_valid(actor): return
+    var icon := TextureRect.new()
+    icon.texture = load(path)
+    icon.position = actor.position + Vector2(65, 45)
+    icon.size = Vector2(82, 82)
+    icon.pivot_offset = icon.size * 0.5
+    icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    icon.modulate = tint
+    icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    combat_area.add_child(icon)
+    icon.scale = Vector2(0.35, 0.35)
+    var tw := icon.create_tween()
+    tw.set_parallel(true)
+    tw.tween_property(icon, "scale", Vector2(1.25, 1.25), 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+    tw.tween_property(icon, "rotation", 0.32, 0.32)
+    tw.tween_property(icon, "modulate", Color(tint.r, tint.g, tint.b, 0.0), 0.40).set_delay(0.08)
+    tw.chain().tween_callback(icon.queue_free)
+
+func _spawn_battle_caption(text: String, pos: Vector2, color: Color) -> void:
+    if combat_area == null: return
+    var l := _label(text, 30, color, HORIZONTAL_ALIGNMENT_CENTER)
+    l.position = pos - Vector2(90, 0)
+    l.size = Vector2(180, 52)
+    l.scale = Vector2(0.6, 0.6)
+    l.pivot_offset = l.size * 0.5
+    combat_area.add_child(l)
+    var tw := l.create_tween()
+    tw.tween_property(l, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+    tw.tween_interval(0.22)
+    tw.tween_property(l, "modulate", Color(color.r, color.g, color.b, 0.0), 0.30)
+    tw.tween_callback(l.queue_free)
 
 func _has_item(id: String) -> bool:
     for it in board:
@@ -665,15 +846,74 @@ func _after_battle_continue() -> void:
     if stage_index >= 5:
         _complete_chapter()
     else:
-        _post_battle_loot()
+        show_loot_choice()
 
-func _post_battle_loot() -> void:
-    # One guaranteed item per won battle keeps the loop moving without gacha timers.
+func show_loot_choice() -> void:
+    _clear_screen()
+    var ch: Dictionary = GameDataRef.CHAPTERS[chapter_index]
+    _set_background(ch["background"])
+    loot_choices = _roll_loot_choices()
+
+    var v := _main_vbox(52, 26, 16)
+    v.add_child(_label("Награда за бой", 34, C_GOLD, HORIZONTAL_ALIGNMENT_CENTER))
+    v.add_child(_label("Выбери один артефакт. Никаких сундуков за рекламу — только решение для текущего билда.", 20, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 10)
+    for i in range(loot_choices.size()):
+        row.add_child(_make_loot_card(i))
+    v.add_child(row)
+
+    var full_hint := "Если сетка заполнена, выбранный предмет автоматически разбирается в детали."
+    v.add_child(_label(full_hint, 18, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+    v.add_child(_button("Пропустить · +4⚙", _skip_loot, 60))
+
+func _roll_loot_choices() -> Array:
+    var out := []
+    var ids := GameDataRef.ITEMS.keys()
+    for _i in range(3):
+        var id: String = ids[_weighted_item_index(ids)]
+        var tier := 1
+        var tier_two_chance := 0.08 + stage_index * 0.045 + chapter_index * 0.03
+        if rng.randf() < tier_two_chance: tier = 2
+        out.append({"id": id, "tier": tier})
+    return out
+
+func _make_loot_card(index: int) -> VBoxContainer:
+    var item: Dictionary = loot_choices[index]
+    var d: Dictionary = GameDataRef.ITEMS[item["id"]]
+    var card := VBoxContainer.new()
+    card.custom_minimum_size.x = 205
+    card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    card.add_theme_constant_override("separation", 8)
+
+    var p := _panel()
+    var inside := VBoxContainer.new()
+    inside.add_theme_constant_override("separation", 8)
+    var icon := _art(d["icon"], Vector2(0, 126))
+    inside.add_child(icon)
+    inside.add_child(_label(d["name"], 20, _tier_color(int(item["tier"])), HORIZONTAL_ALIGNMENT_CENTER))
+    inside.add_child(_label("T%d · %s" % [int(item["tier"]), d["kind"]], 17, C_GOLD, HORIZONTAL_ALIGNMENT_CENTER))
+    inside.add_child(_label(d["desc"], 16, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+    inside.add_child(_button("ВЗЯТЬ", _choose_loot.bind(index), 54, true))
+    p.add_child(_margin(inside, 12))
+    card.add_child(p)
+    return card
+
+func _choose_loot(index: int) -> void:
+    if index < 0 or index >= loot_choices.size(): return
+    var item: Dictionary = loot_choices[index]
     var slot := _first_empty_slot()
     if slot >= 0:
-        var ids := GameDataRef.ITEMS.keys()
-        var id: String = ids[_weighted_item_index(ids)]
-        board[slot] = {"id":id, "tier":1}
+        board[slot] = item.duplicate(true)
+    else:
+        scrap += max(3, int(GameDataRef.item_cost(item["id"], int(item["tier"])) * 0.55))
+    _roll_shop()
+    selected_slot = -1
+    show_prepare()
+
+func _skip_loot() -> void:
+    scrap += 4
     _roll_shop()
     selected_slot = -1
     show_prepare()
@@ -709,17 +949,30 @@ func show_upgrades() -> void:
     _clear_screen(); _set_background("res://assets/backgrounds/archive.png")
     var v := _main_vbox(42, 28, 16)
     var head := HBoxContainer.new(); var back:=_button("‹",show_home,58); back.custom_minimum_size.x=72; head.add_child(back); var title:=_label("Узлы силы",34,C_TEXT); title.size_flags_horizontal=Control.SIZE_EXPAND_FILL; title.vertical_alignment=VERTICAL_ALIGNMENT_CENTER; head.add_child(title); v.add_child(head)
-    v.add_child(_label("Искры: %d" % int(save_data["embers"]), 28, C_GOLD, HORIZONTAL_ALIGNMENT_CENTER))
+    var ember_row := HBoxContainer.new()
+    ember_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    ember_row.add_theme_constant_override("separation", 8)
+    ember_row.add_child(_art("res://assets/props/ember_shard.png", Vector2(46, 46)))
+    ember_row.add_child(_label("Искры: %d" % int(save_data["embers"]), 28, C_GOLD))
+    v.add_child(ember_row)
     v.add_child(_label("Это вся мета-прогрессия демо. Никаких премиальных валют: Искры даются за обычную игру.", 20, C_MUTED))
-    _upgrade_card(v,"attack_knot","Узел натяжения","+4% базовой атаки за уровень",8)
-    _upgrade_card(v,"vital_knot","Узел дыхания","+6% базового здоровья за уровень",8)
-    _upgrade_card(v,"purse_knot","Карман мастера","+2 детали в начале забега за уровень",10)
+    _upgrade_card(v,"attack_knot","Узел натяжения","+4% базовой атаки за уровень",8,"res://assets/props/attack_up.png")
+    _upgrade_card(v,"vital_knot","Узел дыхания","+6% базового здоровья за уровень",8,"res://assets/props/defense_up.png")
+    _upgrade_card(v,"purse_knot","Карман мастера","+2 детали в начале забега за уровень",10,"res://assets/props/treasure_chest.png")
     v.add_child(_label("Забегов: %d  •  завершённых глав: %d" % [int(save_data["runs"]), int(save_data["wins"])], 20, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 
-func _upgrade_card(parent: VBoxContainer, key: String, title: String, desc: String, base_cost: int) -> void:
+func _upgrade_card(parent: VBoxContainer, key: String, title: String, desc: String, base_cost: int, icon_path: String) -> void:
     var level := int(save_data[key]); var cost := base_cost + level * (base_cost / 2 + 2)
     var p:=_panel(); var box:=VBoxContainer.new(); box.add_theme_constant_override("separation",8)
-    box.add_child(_label("%s · ур. %d" % [title,level],26,C_TEXT)); box.add_child(_label(desc,19,C_MUTED))
+    var head := HBoxContainer.new()
+    head.add_theme_constant_override("separation", 12)
+    head.add_child(_art(icon_path, Vector2(64, 64)))
+    var title_box := VBoxContainer.new()
+    title_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    title_box.add_child(_label("%s · ур. %d" % [title,level],26,C_TEXT))
+    title_box.add_child(_label(desc,19,C_MUTED))
+    head.add_child(title_box)
+    box.add_child(head)
     var b:=_button("Улучшить · %d Искр" % cost, _buy_upgrade.bind(key, cost),56,true); b.disabled=int(save_data["embers"])<cost; box.add_child(b)
     p.add_child(_margin(box,16)); parent.add_child(p)
 
@@ -731,6 +984,8 @@ func show_archive() -> void:
     _clear_screen(); _set_background("res://assets/backgrounds/archive.png")
     var v:=_main_vbox(38,28,14)
     var head:=HBoxContainer.new(); var back:=_button("‹",show_home,58); back.custom_minimum_size.x=72; head.add_child(back); var title:=_label("Архив",34,C_TEXT); title.size_flags_horizontal=Control.SIZE_EXPAND_FILL; title.vertical_alignment=VERTICAL_ALIGNMENT_CENTER; head.add_child(title); v.add_child(head)
+    var archive_art := _art("res://assets/props/bookshelf.png", Vector2(0, 150))
+    v.add_child(archive_art)
     v.add_child(_label("Черновые записи истории. Главы открываются прохождением, а не покупкой.",20,C_MUTED))
     for i in range(GameDataRef.CHAPTERS.size()):
         var ch:Dictionary=GameDataRef.CHAPTERS[i]; var unlocked:=i<=int(save_data["max_chapter"])

@@ -74,6 +74,7 @@ const CHAPTERS := [
         "name": "I. Под старой церковью",
         "short": "Старая церковь",
         "background": "res://assets/backgrounds/chapel.png",
+        "prop": "res://assets/props/church_door.png",
         "intro": "Отец говорил, что колокол нельзя трогать после заката. После его смерти под церковью впервые за несколько веков ответило что-то другое.",
         "outro": "Каменная дверь открылась не наружу, а будто в память. Из темноты потянулась тонкая светящаяся связь — и выбрала тебя.",
         "enemies": ["grave_rat", "grave_rat", "chapel_shade", "old_warden", "bound_mage"]
@@ -82,6 +83,7 @@ const CHAPTERS := [
         "name": "II. Дорога, которой не было",
         "short": "Имперская дорога",
         "background": "res://assets/backgrounds/road.png",
+        "prop": "res://assets/props/gravestone.png",
         "intro": "До столицы семь дней пути. Но после пробуждения дороги стали вести себя странно: знакомые мосты повторялись, а чужие люди называли тебя по имени.",
         "outro": "У ворот столицы стражник протянул пропуск, выписанный вчера твоим почерком. Ты никогда прежде не видел этот город.",
         "enemies": ["road_guard", "grave_rat", "road_guard", "chapel_shade", "old_warden"]
@@ -90,6 +92,7 @@ const CHAPTERS := [
         "name": "III. Архив часовой башни",
         "short": "Городской архив",
         "background": "res://assets/backgrounds/archive.png",
+        "prop": "res://assets/props/bookshelf.png",
         "intro": "В архиве нет книги о древнем маге. Зато есть книги, в которых вычеркнуты ровно те страницы, что должны были о нём рассказать.",
         "outro": "В полночь часы пошли назад. На последней чистой странице проступила фраза: «Связь не передаёт силу. Она решает, где сила уже была».",
         "enemies": ["ink_scribe", "clock_husk", "ink_scribe", "old_warden", "bound_mage"]
