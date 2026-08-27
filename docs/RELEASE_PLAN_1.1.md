@@ -16,7 +16,7 @@
 - [x] Усилить game feel: подготовка атак, частицы, вспышки и читаемые числа урона.
 - [x] Заменить текстовую памятку последовательным обучением.
 - [x] Пройти Godot 4.3 import/smoke/gameplay checks и визуальную QA-проверку.
-- [ ] Подтвердить Android/Linux/Windows exports в GitHub Actions и опубликовать `v1.1.0`.
+- [x] GitHub Actions run №12 подтвердил Android/Linux/Windows exports; релиз опубликован тегом `v1.1.0`.
 
 ## Release gate
 
