@@ -10,12 +10,17 @@ func _init() -> void:
 
 func _run_checks() -> void:
     _check(
-        str(ProjectSettings.get_setting("application/config/version", "")) == "1.0.0",
-        "project version is 1.0.0"
+        str(ProjectSettings.get_setting("application/config/version", "")) == "1.0.1",
+        "project version is 1.0.1"
     )
     _check(
-        FileAccess.get_file_as_string("res://VERSION").strip_edges() == "1.0.0",
+        FileAccess.get_file_as_string("res://VERSION").strip_edges() == "1.0.1",
         "VERSION file matches project metadata"
+    )
+    var export_presets := FileAccess.get_file_as_string("res://export_presets.cfg")
+    _check(
+        export_presets.count("binary_format/embed_pck=true") == 2,
+        "desktop exports embed PCK without release-name collisions"
     )
     _check(GameDataRef.ITEMS.size() >= 12, "item catalog has at least 12 artifacts")
     _check(GameDataRef.CHAPTERS.size() >= 4, "campaign has four release chapters")

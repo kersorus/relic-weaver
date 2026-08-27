@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 — Самостоятельные desktop-сборки (2026-08-27)
+
+- Embedded game data into the Linux and Windows executables so each platform is a complete single-file download.
+- Prevented the Linux and Windows PCK files from overwriting each other in tagged GitHub Releases.
+- Added a CI gate that rejects external desktop PCK files before publishing a release.
+
 ## 1.0.0 — Узлы старого мира (2026-08-26)
 
 - Fixed the Godot 4.3 startup parse failure caused by the reserved `trait` identifier.

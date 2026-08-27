@@ -1,4 +1,4 @@
-# Relic Weaver — план релиза 1.0
+# Relic Weaver — план релиза 1.0.1
 
 ## Цель релиза
 
@@ -15,7 +15,7 @@
 - [x] **P1 — полная кампания.** Довести историю до четырёх глав и 20 боёв, добавить финальную локацию, трёх противников и законченный эпилог.
 - [x] **P2 — арт-полировка.** Привести окружения к одной тёмной пиксельной палитре, добавить глубину, ambient motion, grounding персонажей, hit/merge/loot feedback.
 - [x] **P2 — доступность и мета.** Ограничить постоянные улучшения, разделить открытые и завершённые записи архива, дать повторный запуск обучения.
-- [x] **Release gate.** Godot 4.3 import, boot smoke и release checks прошли без `SCRIPT ERROR`; GitHub Actions run №7 собрал Android, Linux и Windows; релиз зафиксирован тегом `v1.0.0`.
+- [x] **Release gate.** Godot 4.3 import, boot smoke и release checks прошли без `SCRIPT ERROR`; GitHub Actions собрал Android, standalone Linux и standalone Windows; релиз зафиксирован тегом `v1.0.1`.
 
 ## Критерии готовности
 
@@ -26,7 +26,7 @@
 5. Старый save 0.3 открывается без сброса валюты и улучшений; некорректные значения ограничиваются.
 6. Незаконченный забег можно продолжить; финальную победу нельзя потерять закрытием приложения.
 7. Интерфейс читаем на базовом portrait viewport 720×1280 и окне 360×640.
-8. GitHub Actions публикует Android/Linux/Windows artifacts и checksums, а тег `v1.0.0` создаёт GitHub Release.
+8. GitHub Actions публикует Android/Linux/Windows artifacts и checksums, а тег `v1.0.1` создаёт GitHub Release без конфликтующих PCK-файлов.
 
 ## После 1.0
 

@@ -179,6 +179,15 @@ jobs:
             --export-release "Windows Desktop" \
             "build/windows/${EXPORT_NAME}.exe"
 
+      - name: Verify standalone desktop exports
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -x "build/linux/${EXPORT_NAME}.x86_64"
+          test -f "build/windows/${EXPORT_NAME}.exe"
+          test ! -e "build/linux/${EXPORT_NAME}.pck"
+          test ! -e "build/windows/${EXPORT_NAME}.pck"
+
       - name: Write build checksums
         shell: bash
         run: |
