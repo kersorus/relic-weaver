@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1 — Надёжный узор (2026-08-27)
+
+- Added verified temporary writes and a last-known-good backup for local saves; invalid primary data now recovers automatically.
+- Added a confirmation dialog with the exact refund before dismantling an artifact.
+- Remembered the preferred battle speed and added automatic combat pause when the application loses focus.
+- Added optional mobile haptics for merging, buying, dismantling and Link Pulse activation.
+- Made workshop links readable without color by giving thread, steel, arcane and mechanism links unique markers.
+- Expanded release checks to cover save recovery, destructive-action confirmation, lifecycle pause, remembered speed and link accessibility.
+
 ## 1.1.0 — Живой узор (2026-08-27)
 
 - Removed fractional background zoom that made nearest-filtered pixel art shimmer.

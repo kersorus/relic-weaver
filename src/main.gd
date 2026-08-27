@@ -6,7 +6,7 @@ const LinkLayerRef = preload("res://src/link_layer.gd")
 const ItemSlotRef = preload("res://src/item_slot.gd")
 const ShopDragIconRef = preload("res://src/shop_drag_icon.gd")
 
-const GAME_VERSION := "1.1.0"
+const GAME_VERSION := "1.1.1"
 
 const C_BG := Color("181b25")
 const C_PANEL := Color("242936")
@@ -92,6 +92,16 @@ func _process(delta: float) -> void:
     if battle_active and not battle_paused:
         _battle_tick(delta * battle_speed)
 
+func _notification(what: int) -> void:
+    if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+        _pause_battle_from_system()
+
+func _exit_tree() -> void:
+    for player in [sfx_click, sfx_merge, sfx_hit, sfx_victory]:
+        if player != null and is_instance_valid(player):
+            player.stop()
+            player.stream = null
+
 func _setup_audio() -> void:
     sfx_click = AudioStreamPlayer.new()
     sfx_click.stream = load("res://assets/audio/click.wav")
@@ -118,12 +128,20 @@ func _reduced_motion() -> bool:
 func _screen_shake_enabled() -> bool:
     return bool(_settings().get("screen_shake", true)) and not _reduced_motion()
 
+func _haptic(duration_ms: int, amplitude := 0.45) -> void:
+    if bool(_settings().get("haptics", true)) and OS.has_feature("mobile"):
+        Input.vibrate_handheld(duration_ms, amplitude)
+
 func _apply_audio_settings() -> void:
     var volume := clampf(float(_settings().get("sfx_volume", 0.85)), 0.0, 1.0)
     var volume_db := -80.0 if volume <= 0.001 else linear_to_db(volume)
     for player in [sfx_click, sfx_merge, sfx_hit, sfx_victory]:
         if player != null:
             player.volume_db = volume_db
+
+func _play_sfx(player: AudioStreamPlayer) -> void:
+    if DisplayServer.get_name() != "headless" and player != null and player.stream != null:
+        player.play()
 
 func _clear_screen() -> void:
     battle_active = false
@@ -196,7 +214,7 @@ func _button(text: String, callback: Callable, min_height := 64, accent := false
     b.add_theme_color_override("font_disabled_color", Color(C_MUTED, 0.55))
     b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
     b.pressed.connect(func():
-        sfx_click.play()
+        _play_sfx(sfx_click)
         callback.call()
     )
     return b
@@ -489,7 +507,7 @@ func show_prepare() -> void:
     link_layer.configure(_board_links(), selected_slot, _reduced_motion())
     board_canvas.add_child(link_layer)
     grid_panel.add_child(_margin(board_canvas, 12)); v.add_child(grid_panel)
-    v.add_child(_label("Перетащи предмет в другую клетку. Бирюзовые линии — нити, золотые — сталь, фиолетовые — магия.", 16, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+    v.add_child(_label("Связи читаются без цвета: нить — точка, сталь — ромб, магия — кольцо, механизм — двойная риска.", 16, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 
     v.add_child(_selected_item_panel())
 
@@ -532,18 +550,29 @@ func _board_links() -> Array:
             var left_id: String = board[index]["id"]
             var right_id: String = board[other_index]["id"]
             var link_color := Color.TRANSPARENT
+            var link_pattern := ""
             var strength := 1.0
             if left_id == "thread" or right_id == "thread":
                 link_color = C_ACCENT
+                link_pattern = "thread"
                 strength = 1.5
             elif _items_share_tag(left_id, right_id, "arcane"):
                 link_color = Color("b993ff")
+                link_pattern = "arcane"
             elif _items_share_tag(left_id, right_id, "steel"):
                 link_color = C_GOLD
+                link_pattern = "steel"
             elif (left_id == "cog" and right_id == "rune") or (left_id == "rune" and right_id == "cog"):
                 link_color = Color("7eb9ff")
+                link_pattern = "mechanism"
             if link_color != Color.TRANSPARENT:
-                links.append({"from": index, "to": other_index, "color": link_color, "strength": strength})
+                links.append({
+                    "from": index,
+                    "to": other_index,
+                    "color": link_color,
+                    "pattern": link_pattern,
+                    "strength": strength
+                })
     return links
 
 func _items_share_tag(left_id: String, right_id: String, tag: String) -> bool:
@@ -612,7 +641,7 @@ func _make_slot(index: int) -> Button:
     b.item_dropped.connect(_slot_dropped)
     b.shop_item_dropped.connect(_shop_item_dropped)
     b.pressed.connect(func():
-        sfx_click.play()
+        _play_sfx(sfx_click)
         _slot_pressed(index)
     )
     return b
@@ -648,6 +677,7 @@ func _shop_item_dropped(offer_index: int, to_index: int) -> void:
     scrap -= cost
     board[to_index] = item.duplicate(true)
     selected_slot = to_index
+    _haptic(24, 0.32)
     _roll_shop()
     show_prepare()
 
@@ -667,7 +697,8 @@ func _move_board_item(from_index: int, to_index: int) -> void:
         board[to_index] = {"id": merged_id, "tier": int(src["tier"]) + 1}
         board[from_index] = null
         selected_slot = -1
-        sfx_merge.play()
+        _play_sfx(sfx_merge)
+        _haptic(52, 0.62)
         _play_merge_fx(to_index, merged_id)
         get_tree().create_timer(0.28).timeout.connect(show_prepare, CONNECT_ONE_SHOT)
         return
@@ -781,10 +812,44 @@ func _item_effect_summary(id: String, tier: int, index := -1) -> String:
 
 func _dismantle_selected() -> void:
     if selected_slot < 0 or board[selected_slot] == null: return
-    var item = board[selected_slot]
-    scrap += _dismantle_value(item)
-    board[selected_slot] = null
+    var item: Dictionary = board[selected_slot]
+    var data: Dictionary = GameDataRef.ITEMS[item["id"]]
+    var refund := _dismantle_value(item)
+    var overlay := ColorRect.new()
+    overlay.color = Color(0.02, 0.025, 0.04, 0.90)
+    overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    screen_root.add_child(overlay)
+    var center := CenterContainer.new()
+    center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    overlay.add_child(center)
+    var panel := _panel()
+    panel.custom_minimum_size.x = 580
+    var content := VBoxContainer.new()
+    content.add_theme_constant_override("separation", 14)
+    content.add_child(_art(data["icon"], Vector2(0, 112)))
+    content.add_child(_label("Разобрать %s?" % data["name"], 29, C_TEXT, HORIZONTAL_ALIGNMENT_CENTER))
+    content.add_child(_label("Предмет исчезнет, а ты получишь %d деталей." % refund, 20, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+    var actions := HBoxContainer.new()
+    actions.add_theme_constant_override("separation", 10)
+    var cancel := _button("Оставить", overlay.queue_free, 58)
+    cancel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    actions.add_child(cancel)
+    var confirm := _button("Разобрать · +%d⚙" % refund, _confirm_dismantle.bind(selected_slot), 58)
+    confirm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    confirm.add_theme_color_override("font_color", C_DANGER)
+    actions.add_child(confirm)
+    content.add_child(actions)
+    panel.add_child(_margin(content, 22))
+    center.add_child(panel)
+
+func _confirm_dismantle(index: int) -> void:
+    if index < 0 or index >= board.size() or board[index] == null:
+        show_prepare()
+        return
+    scrap += _dismantle_value(board[index])
+    board[index] = null
     selected_slot = -1
+    _haptic(32, 0.38)
     show_prepare()
 
 func _dismantle_value(item: Dictionary) -> int:
@@ -940,8 +1005,8 @@ func _tutorial_pages() -> Array:
         {
             "title": "Строй связи",
             "art": "res://assets/items/thread.png",
-            "body": "Учитываются соседние клетки сверху, снизу, слева и справа. Цветные линии показывают уже работающие сочетания.",
-            "tip": "Бирюзовый — нить, золотой — сталь, фиолетовый — магия, голубой — механизм с руной."
+            "body": "Учитываются соседние клетки сверху, снизу, слева и справа. Линии и значки показывают уже работающие сочетания.",
+            "tip": "Нить — точка, сталь — ромб, магия — кольцо, механизм с руной — двойная риска. Цвет помогает, но не обязателен."
         },
         {
             "title": "Читай результат",
@@ -1102,7 +1167,7 @@ func start_battle() -> void:
     hero_attack_interval = maxf(0.25, 1.0 / float(battle_stats["attack_speed"]))
     enemy_attack_interval = 1.0 / float(enemy_data["speed"])
     link_pulse_charge = 25.0
-    battle_speed = 1.0
+    battle_speed = float(_settings().get("battle_speed", 1.0))
     battle_paused = false
 
     _set_background(GameDataRef.CHAPTERS[chapter_index]["background"])
@@ -1113,7 +1178,7 @@ func start_battle() -> void:
     battle_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     battle_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     battle_head.add_child(battle_title)
-    var speed_button := _button("×1", _toggle_battle_speed, 48)
+    var speed_button := _button("×2" if battle_speed > 1.5 else "×1", _toggle_battle_speed, 48)
     speed_button.name = "BattleSpeedButton"
     speed_button.custom_minimum_size.x = 74
     battle_head.add_child(speed_button)
@@ -1197,6 +1262,10 @@ func _build_link_pulse_panel() -> PanelContainer:
 
 func _toggle_battle_speed() -> void:
     battle_speed = 2.0 if battle_speed < 1.5 else 1.0
+    var settings := _settings()
+    settings["battle_speed"] = battle_speed
+    save_data["settings"] = settings
+    SaveManagerRef.save(save_data)
     if screen_root != null:
         var b := screen_root.find_child("BattleSpeedButton", true, false) as Button
         if b != null: b.text = "×2" if battle_speed > 1.5 else "×1"
@@ -1204,13 +1273,24 @@ func _toggle_battle_speed() -> void:
 func _toggle_battle_pause() -> void:
     if not battle_active:
         return
-    battle_paused = not battle_paused
+    _set_battle_paused(not battle_paused)
+
+func _set_battle_paused(paused: bool, system_pause := false) -> void:
+    battle_paused = paused
     if screen_root != null:
         var button := screen_root.find_child("BattlePauseButton", true, false) as Button
         if button != null:
             button.text = "▶" if battle_paused else "Ⅱ"
     if battle_log_label != null:
-        battle_log_label.text = "Бой приостановлен." if battle_paused else "Бой продолжается."
+        if battle_paused:
+            battle_log_label.text = "Бой приостановлен после сворачивания игры." if system_pause else "Бой приостановлен."
+        else:
+            battle_log_label.text = "Бой продолжается."
+    _update_link_pulse_ui()
+
+func _pause_battle_from_system() -> void:
+    if battle_active and not battle_paused:
+        _set_battle_paused(true, true)
 
 func _battle_tick(delta: float) -> void:
     hero_timer -= delta
@@ -1321,7 +1401,7 @@ func _enemy_attack() -> void:
     var reduced: float = maxf(1.0, raw - float(battle_stats["armor"])) * float(battle_stats["guard_mult"])
     hero_hp = maxf(0.0, hero_hp - reduced)
     battle_log_label.text = "%s наносит %d урона." % [enemy_data["name"], int(reduced)]
-    sfx_hit.play()
+    _play_sfx(sfx_hit)
     _animate_attack(enemy_actor, -22.0)
     _floating_text("-%d" % int(reduced), hero_actor, C_DANGER)
     _burst_particles(hero_actor.position + hero_actor.size * 0.5, C_DANGER, 7)
@@ -1338,7 +1418,7 @@ func _damage_enemy(dmg: float, text: String, fx_color := C_TEXT) -> void:
     if not battle_active: return
     enemy_hp = maxf(0.0, enemy_hp - dmg)
     battle_log_label.text = text
-    sfx_hit.play()
+    _play_sfx(sfx_hit)
     _floating_text("-%d" % int(dmg), enemy_actor, fx_color)
     _burst_particles(enemy_actor.position + enemy_actor.size * 0.5, fx_color, 7)
     if enemy_hp <= 0:
@@ -1488,6 +1568,7 @@ func _use_link_pulse() -> void:
     _spawn_battle_icon("res://assets/items/thread.png", enemy_actor, C_ACCENT)
     _burst_particles(enemy_actor.position + enemy_actor.size * 0.5, C_ACCENT, 12)
     _screen_flash(C_ACCENT, 0.12)
+    _haptic(82, 0.78)
     _animate_attack(hero_actor, 34.0)
     if healing > 0.1:
         _floating_text("+%d" % int(healing), hero_actor, C_ACCENT)
@@ -1523,7 +1604,7 @@ func _battle_victory() -> void:
     battle_active = false
     battle_paused = false
     _update_battle_ui()
-    sfx_victory.play()
+    _play_sfx(sfx_victory)
     var reward := int(enemy_data["reward"]) + stage_index * 2
     scrap += reward
     stage_index += 1
@@ -1787,8 +1868,20 @@ func show_settings() -> void:
         "Включена" if bool(settings.get("screen_shake", true)) else "Выключена",
         _toggle_screen_shake
     ))
+    v.add_child(_settings_card(
+        "Тактильный отклик",
+        "Короткая вибрация при слиянии и активации Импульса на мобильном устройстве.",
+        "Включён" if bool(settings.get("haptics", true)) else "Выключен",
+        _toggle_haptics
+    ))
+    v.add_child(_settings_card(
+        "Скорость боя по умолчанию",
+        "Запоминается для следующих боёв; её всё равно можно менять во время сражения.",
+        "×2" if float(settings.get("battle_speed", 1.0)) > 1.5 else "×1",
+        _toggle_default_battle_speed
+    ))
     v.add_child(_button("Повторить обучение", _reset_tutorial, 58))
-    v.add_child(_label("RELIC WEAVER · версия %s\nОфлайн-игра без сетевых функций.", 18, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+    v.add_child(_label("RELIC WEAVER · версия %s\nОфлайн-игра без сетевых функций." % GAME_VERSION, 18, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 
 func _settings_card(title: String, description: String, action_text: String, callback: Callable) -> PanelContainer:
     var panel := _panel()
@@ -1826,6 +1919,21 @@ func _toggle_reduced_motion() -> void:
 func _toggle_screen_shake() -> void:
     var settings := _settings()
     settings["screen_shake"] = not bool(settings.get("screen_shake", true))
+    save_data["settings"] = settings
+    SaveManagerRef.save(save_data)
+    show_settings()
+
+func _toggle_haptics() -> void:
+    var settings := _settings()
+    settings["haptics"] = not bool(settings.get("haptics", true))
+    save_data["settings"] = settings
+    SaveManagerRef.save(save_data)
+    _haptic(38, 0.45)
+    show_settings()
+
+func _toggle_default_battle_speed() -> void:
+    var settings := _settings()
+    settings["battle_speed"] = 2.0 if float(settings.get("battle_speed", 1.0)) < 1.5 else 1.0
     save_data["settings"] = settings
     SaveManagerRef.save(save_data)
     show_settings()

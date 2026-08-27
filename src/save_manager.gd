@@ -2,7 +2,9 @@ class_name SaveManager
 extends RefCounted
 
 const SAVE_PATH := "user://relic_weaver_save.json"
-const SAVE_VERSION := 2
+const BACKUP_PATH := "user://relic_weaver_save.backup.json"
+const TEMP_PATH := "user://relic_weaver_save.tmp.json"
+const SAVE_VERSION := 3
 const MAX_UPGRADE_LEVEL := 10
 
 static func defaults() -> Dictionary:
@@ -21,22 +23,35 @@ static func defaults() -> Dictionary:
         "settings": {
             "sfx_volume": 0.85,
             "reduced_motion": false,
-            "screen_shake": true
+            "screen_shake": true,
+            "battle_speed": 1.0,
+            "haptics": true
         }
     }
 
 static func load_save() -> Dictionary:
-    if not FileAccess.file_exists(SAVE_PATH):
-        return defaults()
-    var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
-    if f == null:
-        push_warning("Relic Weaver: save file could not be opened; defaults loaded")
-        return defaults()
-    var parsed = JSON.parse_string(f.get_as_text())
-    if not parsed is Dictionary:
-        push_warning("Relic Weaver: invalid save JSON; defaults loaded")
-        return defaults()
-    return sanitize(parsed)
+    var primary = _read_dictionary(SAVE_PATH)
+    if primary is Dictionary:
+        return sanitize(primary)
+    var backup = _read_dictionary(BACKUP_PATH)
+    if backup is Dictionary:
+        push_warning("Relic Weaver: primary save is unavailable; backup restored")
+        return sanitize(backup)
+    if FileAccess.file_exists(SAVE_PATH) or FileAccess.file_exists(BACKUP_PATH):
+        push_warning("Relic Weaver: save files are invalid; defaults loaded")
+    return defaults()
+
+static func _read_dictionary(path: String) -> Variant:
+    if not FileAccess.file_exists(path):
+        return null
+    var file := FileAccess.open(path, FileAccess.READ)
+    if file == null:
+        return null
+    var json := JSON.new()
+    if json.parse(file.get_as_text()) != OK:
+        return null
+    var parsed = json.data
+    return parsed if parsed is Dictionary else null
 
 static func sanitize(raw_data: Variant) -> Dictionary:
     var data := defaults()
@@ -72,6 +87,8 @@ static func sanitize(raw_data: Variant) -> Dictionary:
         settings["sfx_volume"] = clampf(_as_float(raw_settings.get("sfx_volume", 0.85)), 0.0, 1.0)
         settings["reduced_motion"] = bool(raw_settings.get("reduced_motion", false))
         settings["screen_shake"] = bool(raw_settings.get("screen_shake", true))
+        settings["battle_speed"] = 2.0 if _as_float(raw_settings.get("battle_speed", 1.0)) >= 1.5 else 1.0
+        settings["haptics"] = bool(raw_settings.get("haptics", true))
     data["settings"] = settings
     return data
 
@@ -86,10 +103,38 @@ static func _as_float(value: Variant) -> float:
     return 0.0
 
 static func save(data: Dictionary) -> bool:
-    var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-    if f == null:
-        push_warning("Relic Weaver: save file could not be written")
+    var serialized := JSON.stringify(sanitize(data), "  ")
+    if not _write_text(TEMP_PATH, serialized):
+        push_warning("Relic Weaver: temporary save file could not be written")
         return false
-    f.store_string(JSON.stringify(sanitize(data), "  "))
-    f.flush()
+    if not _read_dictionary(TEMP_PATH) is Dictionary:
+        push_warning("Relic Weaver: temporary save verification failed")
+        return false
+
+    var current = _read_dictionary(SAVE_PATH)
+    if current is Dictionary:
+        var current_text := FileAccess.get_file_as_string(SAVE_PATH)
+        if not _write_text(BACKUP_PATH, current_text):
+            push_warning("Relic Weaver: backup save could not be written")
+            return false
+
+    var primary_absolute := ProjectSettings.globalize_path(SAVE_PATH)
+    var temporary_absolute := ProjectSettings.globalize_path(TEMP_PATH)
+    if FileAccess.file_exists(SAVE_PATH):
+        var remove_error := DirAccess.remove_absolute(primary_absolute)
+        if remove_error != OK:
+            push_warning("Relic Weaver: old save could not be replaced")
+            return false
+    var rename_error := DirAccess.rename_absolute(temporary_absolute, primary_absolute)
+    if rename_error != OK:
+        push_warning("Relic Weaver: atomic save replacement failed; backup retained")
+        return false
     return true
+
+static func _write_text(path: String, text: String) -> bool:
+    var file := FileAccess.open(path, FileAccess.WRITE)
+    if file == null:
+        return false
+    file.store_string(text)
+    file.flush()
+    return file.get_error() == OK

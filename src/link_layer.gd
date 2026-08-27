@@ -33,14 +33,43 @@ func _draw() -> void:
         var strength := float(link_data.get("strength", 1.0))
         draw_line(start, finish, Color(color.r, color.g, color.b, 0.18), 9.0 + strength * 2.0, true)
         draw_line(start, finish, Color(color.r, color.g, color.b, 0.78), 2.0 + strength, true)
-        if not reduced_motion:
-            var pulse_position := start.lerp(finish, phase)
-            draw_circle(pulse_position, 4.0 + strength, Color(color.r, color.g, color.b, 0.95))
+        _draw_link_marker(
+            start,
+            finish,
+            str(link_data.get("pattern", "thread")),
+            strength,
+            Color(color.r, color.g, color.b, 0.98)
+        )
 
     if selected_slot >= 0:
         var center := _cell_center(selected_slot)
         var pulse := 4.0 if reduced_motion else sin(phase * TAU) * 2.0 + 5.0
         draw_arc(center, cell_size.x * 0.41 + pulse, 0.0, TAU, 32, Color("80f5d9"), 3.0, true)
+
+func _draw_link_marker(start: Vector2, finish: Vector2, pattern: String, strength: float, color: Color) -> void:
+    var direction := (finish - start).normalized()
+    var normal := Vector2(-direction.y, direction.x)
+    var center := start.lerp(finish, 0.5)
+    match pattern:
+        "steel":
+            var radius := 6.0 + strength
+            draw_colored_polygon(PackedVector2Array([
+                center - direction * radius,
+                center + normal * radius,
+                center + direction * radius,
+                center - normal * radius
+            ]), color)
+        "arcane":
+            draw_circle(center, 8.0 + strength, Color(color.r, color.g, color.b, 0.16))
+            draw_arc(center, 7.0 + strength, 0.0, TAU, 20, color, 2.5, true)
+        "mechanism":
+            for distance in [0.38, 0.62]:
+                var marker := start.lerp(finish, distance)
+                draw_line(marker - normal * 7.0, marker + normal * 7.0, color, 3.0, true)
+        _:
+            var marker_phase := 0.5 if reduced_motion else phase
+            var pulse_position := start.lerp(finish, marker_phase)
+            draw_circle(pulse_position, 4.0 + strength, color)
 
 func _cell_center(index: int) -> Vector2:
     var x := index % columns

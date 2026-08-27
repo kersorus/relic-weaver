@@ -10,11 +10,11 @@ func _init() -> void:
 
 func _run_checks() -> void:
     _check(
-        str(ProjectSettings.get_setting("application/config/version", "")) == "1.1.0",
-        "project version is 1.1.0"
+        str(ProjectSettings.get_setting("application/config/version", "")) == "1.1.1",
+        "project version is 1.1.1"
     )
     _check(
-        FileAccess.get_file_as_string("res://VERSION").strip_edges() == "1.1.0",
+        FileAccess.get_file_as_string("res://VERSION").strip_edges() == "1.1.1",
         "VERSION file matches project metadata"
     )
     var export_presets := FileAccess.get_file_as_string("res://export_presets.cfg")
@@ -34,7 +34,7 @@ func _run_checks() -> void:
     var sanitized := SaveManagerRef.sanitize({
         "embers": -500,
         "attack_knot": 999,
-        "settings": {"sfx_volume": 7.0},
+        "settings": {"sfx_volume": 7.0, "battle_speed": 9.0, "haptics": false},
         "completed_chapters": [0, 0, 2, -1]
     })
     _check(int(sanitized["embers"]) == 0, "negative currency is rejected")
@@ -43,7 +43,10 @@ func _run_checks() -> void:
         "upgrade level is capped"
     )
     _check(float(sanitized["settings"]["sfx_volume"]) == 1.0, "audio volume is clamped")
+    _check(float(sanitized["settings"]["battle_speed"]) == 2.0, "battle speed is normalized")
+    _check(not bool(sanitized["settings"]["haptics"]), "haptic preference is retained")
     _check(sanitized["completed_chapters"] == [0, 2], "completed chapters are normalized")
+    _check_save_recovery()
 
     var packed := load("res://main.tscn") as PackedScene
     _check(packed != null, "main scene loads")
@@ -57,7 +60,15 @@ func _run_checks() -> void:
     await process_frame
     _check(bool(game.get_meta("boot_ok", false)), "main scene reports boot_ok")
     _check(_tree_contains_text(game, "RELIC WEAVER"), "home screen is visible")
+    _check(_tree_contains_text(game, "Версия 1.1.1"), "home screen shows the current version")
     _check(game.current_bg.scale == Vector2.ONE, "pixel background remains at a stable scale")
+    game.show_settings()
+    await process_frame
+    _check(_tree_contains_text(game, "Тактильный отклик"), "settings expose optional haptics")
+    _check(_tree_contains_text(game, "Скорость боя по умолчанию"), "settings expose remembered battle speed")
+    _check(_tree_contains_text(game, "RELIC WEAVER · версия 1.1.1"), "settings render the version without a placeholder")
+    game.show_home()
+    await process_frame
 
     game.save_data["tutorial_seen"] = false
     game._start_run(0)
@@ -73,6 +84,36 @@ func _run_checks() -> void:
     _check(_tree_contains_text(game, "Следующий противник"), "workshop previews the next enemy")
     _check(_tree_contains_text(game, "Сборка героя"), "workshop exposes complete build stats")
     _check(_tree_contains_text(game, "Лавка артефактов"), "shop has a clear section title")
+    _check(_tree_contains_text(game, "Связи читаются без цвета"), "link legend does not rely on color")
+
+    var original_board: Array = game.board.duplicate(true)
+    game.board = _accessibility_link_board()
+    var pattern_names := _link_pattern_names(game._board_links())
+    _check(pattern_names.has("thread"), "thread links have a dot marker")
+    _check(pattern_names.has("steel"), "steel links have a diamond marker")
+    _check(pattern_names.has("arcane"), "arcane links have a ring marker")
+    _check(pattern_names.has("mechanism"), "mechanism links have a double-tick marker")
+    game.board = original_board
+    game.show_prepare()
+    await process_frame
+
+    var dismantle_index := _first_item_index(game.board)
+    var dismantled_item: Dictionary = game.board[dismantle_index].duplicate(true)
+    var scrap_before_dismantle: int = int(game.scrap)
+    var expected_refund: int = int(game._dismantle_value(dismantled_item))
+    game.selected_slot = dismantle_index
+    game._dismantle_selected()
+    await process_frame
+    _check(game.board[dismantle_index] != null, "dismantle requires explicit confirmation")
+    _check(_tree_contains_text(game, "Разобрать %s?" % GameDataRef.ITEMS[dismantled_item["id"]]["name"]), "dismantle confirmation names the item")
+    game._confirm_dismantle(dismantle_index)
+    await process_frame
+    _check(game.board[dismantle_index] == null, "confirmed dismantle removes the item")
+    _check(int(game.scrap) == scrap_before_dismantle + expected_refund, "confirmed dismantle grants the shown refund")
+    game.board[dismantle_index] = dismantled_item
+    game.scrap = scrap_before_dismantle
+    game.show_prepare()
+    await process_frame
 
     var moved_id := str(game.board[6]["id"])
     game._slot_dropped(6, 5)
@@ -93,9 +134,20 @@ func _run_checks() -> void:
     await process_frame
     _check(game._build_score() + 0.001 >= score_before_auto_arrange, "auto-arrange never weakens the build")
 
+    game.save_data["settings"]["battle_speed"] = 2.0
     game.start_battle()
     await process_frame
     _check(game.battle_active, "battle starts")
+    _check(game.battle_speed == 2.0, "battle remembers the preferred speed")
+    _check(_tree_contains_text(game, "×2"), "battle speed button reflects the preference")
+    game._toggle_battle_speed()
+    _check(game.battle_speed == 1.0, "battle speed can still be changed during combat")
+    _check(float(game.save_data["settings"]["battle_speed"]) == 1.0, "battle speed changes are persisted")
+    game._notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+    _check(game.battle_paused, "battle pauses when the application loses focus")
+    _check(_tree_contains_text(game, "после сворачивания"), "automatic pause explains why combat stopped")
+    game._toggle_battle_pause()
+    _check(not game.battle_paused, "a system-paused battle can be resumed")
     _check(game.enemy_hp > 0.0, "battle enemy has health")
     _check(game.link_pulse_charge > 0.0, "active link pulse starts partially charged")
     var hp_before_pulse: float = float(game.enemy_hp)
@@ -147,7 +199,7 @@ func _run_checks() -> void:
     _check(3 in game.save_data["completed_chapters"], "final chapter completion is recorded")
     _check(game.save_data["active_run"].is_empty(), "completed run is cleared")
 
-    game.queue_free()
+    game.free()
     for _frame in range(4):
         await process_frame
     # Let this coroutine return before quitting. Its local PackedScene and
@@ -167,6 +219,54 @@ func _check_catalog_resources() -> void:
         _check(chapter["enemies"].size() == 5, "chapter contains five battles")
         for enemy_id in chapter["enemies"]:
             _check(GameDataRef.ENEMIES.has(enemy_id), "chapter enemy exists: %s" % enemy_id)
+
+func _check_save_recovery() -> void:
+    var first := SaveManagerRef.defaults()
+    first["embers"] = 17
+    _check(SaveManagerRef.save(first), "first atomic save succeeds")
+    var second := first.duplicate(true)
+    second["embers"] = 23
+    _check(SaveManagerRef.save(second), "second atomic save succeeds")
+    var backup = JSON.parse_string(FileAccess.get_file_as_string(SaveManagerRef.BACKUP_PATH))
+    _check(backup is Dictionary and int(backup["embers"]) == 17, "previous valid save is kept as backup")
+    var corrupt := FileAccess.open(SaveManagerRef.SAVE_PATH, FileAccess.WRITE)
+    _check(corrupt != null, "primary save can be opened for recovery test")
+    if corrupt != null:
+        corrupt.store_string("{broken")
+        corrupt.flush()
+        corrupt = null
+    var recovered := SaveManagerRef.load_save()
+    _check(int(recovered["embers"]) == 17, "invalid primary save is recovered from backup")
+    var repaired := SaveManagerRef.defaults()
+    _check(SaveManagerRef.save(repaired), "recovered save can be replaced with a valid primary")
+
+func _accessibility_link_board() -> Array:
+    var result: Array = []
+    result.resize(GameDataRef.BOARD_SIZE)
+    result.fill(null)
+    result[0] = {"id": "blade", "tier": 1}
+    result[1] = {"id": "buckler", "tier": 1}
+    result[3] = {"id": "sigil", "tier": 1}
+    result[4] = {"id": "rune", "tier": 1}
+    result[5] = {"id": "cog", "tier": 1}
+    result[6] = {"id": "rune", "tier": 1}
+    result[10] = {"id": "thread", "tier": 1}
+    result[11] = {"id": "bell", "tier": 1}
+    return result
+
+func _link_pattern_names(links: Array) -> Array[String]:
+    var result: Array[String] = []
+    for link in links:
+        var pattern := str(link.get("pattern", ""))
+        if pattern not in result:
+            result.append(pattern)
+    return result
+
+func _first_item_index(items: Array) -> int:
+    for index in range(items.size()):
+        if items[index] != null:
+            return index
+    return -1
 
 func _tree_contains_text(node: Node, expected: String) -> bool:
     if node is Label and expected in node.text:
