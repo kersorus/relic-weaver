@@ -9,62 +9,62 @@ const BOARD_SIZE := BOARD_COLS * BOARD_ROWS
 const ITEMS := {
     "blade": {
         "name": "Клинок сторожа", "kind": "Оружие", "icon": "res://assets/items/blade.png",
-        "desc": "+атака. Каждый четвёртый удар наносит рубящий бонус.",
+        "desc": "Повышает урон. Каждый четвёртый удар наносит дополнительный урон.",
         "base_cost": 6, "weight": 14, "tags": ["steel", "strike"]
     },
     "buckler": {
         "name": "Круглый щит", "kind": "Защита", "icon": "res://assets/items/buckler.png",
-        "desc": "+здоровье и броня. Лучше работает рядом с металлом.",
+        "desc": "Повышает здоровье и броню. Соседние стальные предметы дополнительно снижают входящий урон.",
         "base_cost": 6, "weight": 13, "tags": ["steel", "guard"]
     },
     "sigil": {
         "name": "Знак разрыва", "kind": "Магия", "icon": "res://assets/items/sigil.png",
-        "desc": "Периодически бьёт чистой магией. Усиливается нитями.",
+        "desc": "Периодически наносит магический урон. Соседние нити усиливают импульс.",
         "base_cost": 7, "weight": 12, "tags": ["arcane", "pulse"]
     },
     "boot": {
         "name": "Сапог гонца", "kind": "Скорость", "icon": "res://assets/items/boot.png",
-        "desc": "+скорость атаки и небольшой шанс уклонения.",
+        "desc": "Повышает скорость атаки и даёт небольшой шанс уклониться.",
         "base_cost": 6, "weight": 11, "tags": ["motion"]
     },
     "charm": {
         "name": "Красный оберег", "kind": "Жизнь", "icon": "res://assets/items/charm.png",
-        "desc": "Даёт вампиризм. На высоких уровнях лечит после тяжёлого удара.",
+        "desc": "Часть нанесённого урона возвращается герою в виде здоровья.",
         "base_cost": 8, "weight": 10, "tags": ["blood", "arcane"]
     },
     "cog": {
         "name": "Часовая шестерня", "kind": "Механизм", "icon": "res://assets/items/cog.png",
-        "desc": "+скорость и критический шанс. Любит соседство с рунами.",
+        "desc": "Повышает скорость атаки и шанс критического удара. Соседняя руна усиливает критический шанс.",
         "base_cost": 8, "weight": 10, "tags": ["clock", "motion"]
     },
     "lantern": {
         "name": "Тихий фонарь", "kind": "Поддержка", "icon": "res://assets/items/lantern.png",
-        "desc": "Медленно восстанавливает здоровье в бою.",
+        "desc": "Каждую секунду восстанавливает здоровье героя.",
         "base_cost": 7, "weight": 9, "tags": ["light", "guard"]
     },
     "thread": {
         "name": "Связующая нить", "kind": "Связь", "icon": "res://assets/items/thread.png",
-        "desc": "Главный синергетик: усиливает соседние предметы и получает силу от соседей.",
+        "desc": "Усиливает общий урон за каждый предмет в соседней клетке. Некоторые артефакты получают от нити отдельный бонус.",
         "base_cost": 8, "weight": 12, "tags": ["link", "arcane"]
     },
     "rune": {
         "name": "Руна отражения", "kind": "Руна", "icon": "res://assets/items/rune.png",
-        "desc": "+крит. Рядом с магией добавляет магический урон к атакам.",
+        "desc": "Повышает шанс критического удара. Соседние магические предметы усиливают периодический импульс.",
         "base_cost": 9, "weight": 8, "tags": ["rune", "arcane"]
     },
     "bell": {
         "name": "Погребальный колокол", "kind": "Контроль", "icon": "res://assets/items/bell.png",
-        "desc": "Иногда оглушает врага и наносит удар по стойкости.",
+        "desc": "Через равные промежутки наносит урон и ненадолго останавливает врага.",
         "base_cost": 9, "weight": 8, "tags": ["sound", "guard"]
     },
     "mirror": {
         "name": "Дорожное зеркало", "kind": "Защита", "icon": "res://assets/items/mirror.png",
-        "desc": "+уклонение. После уклонения следующий удар героя сильнее.",
+        "desc": "Повышает шанс уклонения. После успешного уклонения следующий удар героя наносит больше урона.",
         "base_cost": 10, "weight": 7, "tags": ["light", "motion"]
     },
     "spindle": {
         "name": "Веретено узлов", "kind": "Реликвия", "icon": "res://assets/items/spindle.png",
-        "desc": "Гибрид атаки и здоровья. За каждую соседнюю нить получает дополнительную силу.",
+        "desc": "Повышает урон и здоровье. Каждая соседняя нить усиливает оба бонуса.",
         "base_cost": 11, "weight": 6, "tags": ["link", "blood", "relic"]
     }
 }
@@ -109,16 +109,16 @@ const CHAPTERS := [
 ]
 
 const ENEMIES := {
-    "grave_rat": {"name":"Могильная крыса", "sprite":"res://assets/actors/grave_rat.png", "hp":78.0, "atk":9.0, "speed":1.18, "reward":6, "trait":"Грызёт быстро"},
+    "grave_rat": {"name":"Могильная крыса", "sprite":"res://assets/actors/grave_rat.png", "hp":78.0, "atk":9.0, "speed":1.18, "reward":6, "trait":"Атакует чаще большинства врагов"},
     "chapel_shade": {"name":"Тень прихожанина", "sprite":"res://assets/actors/chapel_shade.png", "hp":118.0, "atk":13.0, "speed":0.88, "reward":8, "trait":"Каждый третий удар сильнее"},
-    "road_guard": {"name":"Сломанный дозорный", "sprite":"res://assets/actors/road_guard.png", "hp":146.0, "atk":14.0, "speed":0.80, "reward":9, "trait":"Высокая защита"},
+    "road_guard": {"name":"Сломанный дозорный", "sprite":"res://assets/actors/road_guard.png", "hp":146.0, "atk":14.0, "speed":0.80, "reward":9, "trait":"Получает на 14% меньше урона"},
     "ink_scribe": {"name":"Чернильный писец", "sprite":"res://assets/actors/ink_scribe.png", "hp":132.0, "atk":17.0, "speed":0.90, "reward":10, "trait":"Порча: усиливается со временем"},
-    "old_warden": {"name":"Последний сторож", "sprite":"res://assets/actors/old_warden.png", "hp":220.0, "atk":20.0, "speed":0.76, "reward":13, "trait":"Блокирует часть ударов"},
+    "old_warden": {"name":"Последний сторож", "sprite":"res://assets/actors/old_warden.png", "hp":220.0, "atk":20.0, "speed":0.76, "reward":13, "trait":"Иногда блокирует почти половину урона"},
     "clock_husk": {"name":"Пустой часовой", "sprite":"res://assets/actors/clock_husk.png", "hp":184.0, "atk":18.0, "speed":1.02, "reward":12, "trait":"Ускоряется при низком здоровье"},
-    "bound_mage": {"name":"Связанный маг", "sprite":"res://assets/actors/bound_mage.png", "hp":300.0, "atk":24.0, "speed":0.84, "reward":18, "trait":"Босс: импульс связи"},
+    "bound_mage": {"name":"Связанный маг", "sprite":"res://assets/actors/bound_mage.png", "hp":300.0, "atk":24.0, "speed":0.84, "reward":18, "trait":"Каждая четвёртая атака наносит почти двойной урон"},
     "thread_wraith": {"name":"Нитяной призрак", "sprite":"res://assets/actors/thread_wraith.png", "hp":205.0, "atk":21.0, "speed":1.10, "reward":14, "trait":"Каждый пятый удар уходит в нить"},
     "brass_seraph": {"name":"Латунный серафим", "sprite":"res://assets/actors/brass_seraph.png", "hp":265.0, "atk":25.0, "speed":0.82, "reward":17, "trait":"Латунный панцирь: −18% урона"},
-    "first_weaver": {"name":"Первый Связующий", "sprite":"res://assets/actors/first_weaver.png", "hp":440.0, "atk":30.0, "speed":0.90, "reward":26, "trait":"Финальный босс: переписывает ритм"}
+    "first_weaver": {"name":"Первый Связующий", "sprite":"res://assets/actors/first_weaver.png", "hp":440.0, "atk":30.0, "speed":0.90, "reward":26, "trait":"Каждая третья атака сильнее; на половине здоровья ускоряется"}
 }
 
 static func tier_name(tier: int) -> String:

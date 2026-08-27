@@ -3,8 +3,10 @@ extends Control
 const GameDataRef = preload("res://src/game_data.gd")
 const SaveManagerRef = preload("res://src/save_manager.gd")
 const LinkLayerRef = preload("res://src/link_layer.gd")
+const ItemSlotRef = preload("res://src/item_slot.gd")
+const ShopDragIconRef = preload("res://src/shop_drag_icon.gd")
 
-const GAME_VERSION := "1.0.0"
+const GAME_VERSION := "1.1.0"
 
 const C_BG := Color("181b25")
 const C_PANEL := Color("242936")
@@ -59,6 +61,15 @@ var battle_speed := 1.0
 var battle_paused := false
 var loot_choices: Array = []
 var enemy_id := ""
+var hero_attack_interval := 1.0
+var enemy_attack_interval := 1.0
+var hero_action_bar: ProgressBar
+var enemy_action_bar: ProgressBar
+var link_pulse_charge := 0.0
+var link_pulse_bar: ProgressBar
+var link_pulse_button: Button
+var tutorial_step := 0
+var tutorial_overlay: ColorRect
 
 var sfx_click: AudioStreamPlayer
 var sfx_merge: AudioStreamPlayer
@@ -159,6 +170,7 @@ func _label(text: String, size := 26, color := C_TEXT, align := HORIZONTAL_ALIGN
     l.add_theme_color_override("font_color", color)
     l.horizontal_alignment = align
     l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    l.mouse_filter = Control.MOUSE_FILTER_IGNORE
     return l
 
 func _art(path: String, min_size := Vector2(128, 128)) -> TextureRect:
@@ -178,7 +190,11 @@ func _button(text: String, callback: Callable, min_height := 64, accent := false
     b.add_theme_stylebox_override("normal", _style_box(C_ACCENT if accent else C_PANEL_2, 14))
     b.add_theme_stylebox_override("hover", _style_box((C_ACCENT if accent else C_PANEL_2).lightened(0.08), 14))
     b.add_theme_stylebox_override("pressed", _style_box((C_ACCENT if accent else C_PANEL_2).darkened(0.10), 14))
+    b.add_theme_stylebox_override("focus", _style_box(Color(C_ACCENT, 0.14), 14, C_ACCENT, 2))
+    b.add_theme_stylebox_override("disabled", _style_box(Color(C_PANEL_2, 0.56), 14))
     b.add_theme_color_override("font_color", Color("10161b") if accent else C_TEXT)
+    b.add_theme_color_override("font_disabled_color", Color(C_MUTED, 0.55))
+    b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
     b.pressed.connect(func():
         sfx_click.play()
         callback.call()
@@ -214,17 +230,13 @@ func _set_background(path: String) -> TextureRect:
     veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
     screen_root.add_child(veil)
     current_bg = bg
-    call_deferred("_animate_background", bg)
     return bg
 
 func _animate_background(bg: TextureRect) -> void:
-    if _reduced_motion() or not is_instance_valid(bg):
-        return
-    bg.pivot_offset = bg.size * 0.5
-    bg.scale = Vector2(1.025, 1.025)
-    var tween := bg.create_tween().set_loops()
-    tween.tween_property(bg, "scale", Vector2(1.055, 1.055), 8.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-    tween.tween_property(bg, "scale", Vector2(1.025, 1.025), 8.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+    # Fractional zoom makes nearest-filtered pixel art shimmer every frame.
+    # Backgrounds stay pixel-perfect; motion belongs to discrete foreground VFX.
+    if is_instance_valid(bg):
+        bg.scale = Vector2.ONE
 
 func _main_vbox(top := 24, side := 24, gap := 14) -> VBoxContainer:
     var scroll := ScrollContainer.new()
@@ -267,7 +279,7 @@ func show_home() -> void:
     v.add_child(_label("Узлы старого мира", 24, C_ACCENT, HORIZONTAL_ALIGNMENT_CENTER))
 
     var desc_panel := _panel()
-    desc_panel.add_child(_margin(_label("Офлайн merge-RPG: собирай артефакты на сетке, сшивай одинаковые предметы, строй цепи соседства и отправляй героя в короткие автобои.", 22, C_TEXT), 20))
+    desc_panel.add_child(_margin(_label("Собирай артефакты, соединяй их свойства и меняй раскладку перед каждым боем. Чем точнее узор, тем сильнее герой.", 22, C_TEXT), 20))
     v.add_child(desc_panel)
 
     var unlocked_chapters := clampi(int(save_data["max_chapter"]) + 1, 1, GameDataRef.CHAPTERS.size())
@@ -284,7 +296,7 @@ func show_home() -> void:
     var lore := _button("Архив", show_archive, 64); lore.size_flags_horizontal = Control.SIZE_EXPAND_FILL; first_row.add_child(lore)
     v.add_child(first_row)
     v.add_child(_button("Настройки и доступность", show_settings, 58))
-    v.add_child(_label("Без рекламы • без аккаунта • сохранение только на устройстве", 18, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+    v.add_child(_label("Прогресс сохраняется автоматически на этом устройстве", 18, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
     v.add_child(_label("Версия %s" % GAME_VERSION, 16, Color(C_MUTED, 0.72), HORIZONTAL_ALIGNMENT_CENTER))
 
 func _has_active_run() -> bool:
@@ -457,7 +469,8 @@ func show_prepare() -> void:
     v.add_child(top)
 
     var stats := _calculate_stats()
-    v.add_child(_label("Сила %d  •  HP %d  •  скорость %.2f  •  синергия %d" % [int(stats["attack"]), int(stats["max_hp"]), stats["attack_speed"], int(stats["link_score"])], 19, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+    v.add_child(_build_enemy_preview())
+    v.add_child(_build_stats_panel(stats))
 
     var grid_panel := _panel()
     var board_canvas := Control.new()
@@ -476,24 +489,28 @@ func show_prepare() -> void:
     link_layer.configure(_board_links(), selected_slot, _reduced_motion())
     board_canvas.add_child(link_layer)
     grid_panel.add_child(_margin(board_canvas, 12)); v.add_child(grid_panel)
+    v.add_child(_label("Перетащи предмет в другую клетку. Бирюзовые линии — нити, золотые — сталь, фиолетовые — магия.", 16, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 
-    var selected_text := _label(_selected_description(), 18, C_TEXT)
-    selected_text.custom_minimum_size.y = 56
-    v.add_child(selected_text)
+    v.add_child(_selected_item_panel())
 
     var action_row := HBoxContainer.new(); action_row.add_theme_constant_override("separation", 10)
-    var dismantle := _button("Разобрать", _dismantle_selected, 52); dismantle.size_flags_horizontal = Control.SIZE_EXPAND_FILL; dismantle.disabled = selected_slot < 0; action_row.add_child(dismantle)
-    var shuffle := _button("Перемешать", _shuffle_board, 52); shuffle.size_flags_horizontal = Control.SIZE_EXPAND_FILL; action_row.add_child(shuffle)
+    var dismantle_text := "Разобрать"
+    if selected_slot >= 0 and board[selected_slot] != null:
+        dismantle_text += " · +%d⚙" % _dismantle_value(board[selected_slot])
+    var dismantle := _button(dismantle_text, _dismantle_selected, 52); dismantle.size_flags_horizontal = Control.SIZE_EXPAND_FILL; dismantle.disabled = selected_slot < 0; action_row.add_child(dismantle)
+    var auto_arrange := _button("Автораскладка", _auto_arrange_board, 52); auto_arrange.size_flags_horizontal = Control.SIZE_EXPAND_FILL; action_row.add_child(auto_arrange)
     v.add_child(action_row)
 
-    var shop_panel := _panel(); var shop_box := VBoxContainer.new(); shop_box.add_theme_constant_override("separation", 8)
-    var sh := HBoxContainer.new(); var st := _label("Находки", 23, C_TEXT); st.size_flags_horizontal = Control.SIZE_EXPAND_FILL; sh.add_child(st)
-    sh.add_child(_button("Обновить · 3⚙", _reroll_shop, 46)); shop_box.add_child(sh)
-    var offers := HBoxContainer.new(); offers.add_theme_constant_override("separation", 7)
+    var shop_panel := _panel(); var shop_box := VBoxContainer.new(); shop_box.add_theme_constant_override("separation", 10)
+    var sh := HBoxContainer.new(); var st := _label("Лавка артефактов", 23, C_TEXT); st.size_flags_horizontal = Control.SIZE_EXPAND_FILL; sh.add_child(st)
+    var reroll := _button("Новые находки · 3⚙", _reroll_shop, 46)
+    reroll.disabled = scrap < 3
+    sh.add_child(reroll); shop_box.add_child(sh)
+    var offers := VBoxContainer.new(); offers.add_theme_constant_override("separation", 8)
     for i in range(shop.size()): offers.add_child(_make_offer(i))
     shop_box.add_child(offers); shop_panel.add_child(_margin(shop_box, 12)); v.add_child(shop_panel)
 
-    v.add_child(_button("В БОЙ", start_battle, 68, true))
+    v.add_child(_button("НАЧАТЬ БОЙ", start_battle, 68, true))
 
     if not bool(save_data["tutorial_seen"]):
         _show_tutorial_overlay()
@@ -532,8 +549,46 @@ func _board_links() -> Array:
 func _items_share_tag(left_id: String, right_id: String, tag: String) -> bool:
     return tag in GameDataRef.ITEMS[left_id]["tags"] and tag in GameDataRef.ITEMS[right_id]["tags"]
 
+func _build_enemy_preview() -> PanelContainer:
+    var id := str(GameDataRef.CHAPTERS[chapter_index]["enemies"][stage_index])
+    var data: Dictionary = GameDataRef.ENEMIES[id]
+    var scale := GameDataRef.chapter_scale(chapter_index, stage_index)
+    var panel := _panel()
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 12)
+    row.add_child(_art(data["sprite"], Vector2(82, 82)))
+    var copy := VBoxContainer.new()
+    copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    copy.add_theme_constant_override("separation", 3)
+    copy.add_child(_label("Следующий противник", 16, C_GOLD))
+    copy.add_child(_label(data["name"], 22, C_TEXT))
+    copy.add_child(_label("Здоровье %d  •  урон %d  •  атак/с %.2f" % [int(float(data["hp"]) * scale), int(float(data["atk"]) * scale), float(data["speed"])], 16, C_MUTED))
+    copy.add_child(_label(data["trait"], 16, C_DANGER))
+    row.add_child(copy)
+    panel.add_child(_margin(row, 12))
+    return panel
+
+func _build_stats_panel(stats: Dictionary) -> PanelContainer:
+    var panel := _panel()
+    var box := VBoxContainer.new()
+    box.add_theme_constant_override("separation", 5)
+    var head := HBoxContainer.new()
+    var title := _label("Сборка героя", 21, C_TEXT)
+    title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    head.add_child(title)
+    var links_label := _label("Связи %d" % int(stats["link_score"]), 18, C_ACCENT, HORIZONTAL_ALIGNMENT_RIGHT)
+    links_label.custom_minimum_size.x = 118
+    links_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+    head.add_child(links_label)
+    box.add_child(head)
+    box.add_child(_label("Урон %d  •  здоровье %d  •  атак/с %.2f" % [int(stats["attack"]), int(stats["max_hp"]), float(stats["attack_speed"])], 17, C_TEXT))
+    box.add_child(_label("Броня %.1f  •  крит %d%%  •  уклон %d%%  •  вампиризм %d%%" % [float(stats["armor"]), int(float(stats["crit"]) * 100.0), int(float(stats["dodge"]) * 100.0), int(float(stats["lifesteal"]) * 100.0)], 16, C_MUTED))
+    box.add_child(_label("Магия %.1f  •  восстановление %.1f/с  •  общий урон +%d%%" % [float(stats["magic"]), float(stats["regen"]), int((float(stats["damage_mult"]) - 1.0) * 100.0)], 16, C_MUTED))
+    panel.add_child(_margin(box, 12))
+    return panel
+
 func _make_slot(index: int) -> Button:
-    var b := Button.new()
+    var b := ItemSlotRef.new()
     b.custom_minimum_size = Vector2(121, 121)
     b.expand_icon = true
     b.add_theme_font_size_override("font_size", 15)
@@ -544,11 +599,18 @@ func _make_slot(index: int) -> Button:
     if item == null:
         b.text = "·"
         b.add_theme_color_override("font_color", Color("69758b"))
+        b.configure(index, null, null, 1, C_TEXT)
+        b.tooltip_text = "Пустая клетка"
     else:
         var data: Dictionary = GameDataRef.ITEMS[item["id"]]
-        b.icon = load(data["icon"])
+        var icon_texture := load(data["icon"]) as Texture2D
+        b.icon = icon_texture
         b.text = "\n\n\nT%d" % int(item["tier"])
         b.add_theme_color_override("font_color", _tier_color(int(item["tier"])))
+        b.configure(index, item.duplicate(true), icon_texture, int(item["tier"]), _tier_color(int(item["tier"])))
+        b.tooltip_text = "%s · T%d\n%s" % [data["name"], int(item["tier"]), data["desc"]]
+    b.item_dropped.connect(_slot_dropped)
+    b.shop_item_dropped.connect(_shop_item_dropped)
     b.pressed.connect(func():
         sfx_click.play()
         _slot_pressed(index)
@@ -562,21 +624,57 @@ func _slot_pressed(index: int) -> void:
     elif selected_slot == index:
         selected_slot = -1
     else:
-        var src = board[selected_slot]
-        var dst = board[index]
-        if dst == null:
-            board[index] = src; board[selected_slot] = null; selected_slot = -1
-        elif src["id"] == dst["id"] and int(src["tier"]) == int(dst["tier"]) and int(src["tier"]) < GameDataRef.MAX_TIER:
-            var merged_id: String = src["id"]
-            board[index] = {"id":merged_id, "tier":int(src["tier"]) + 1}
-            board[selected_slot] = null
-            selected_slot = -1
-            sfx_merge.play()
-            _play_merge_fx(index, merged_id)
-            get_tree().create_timer(0.28).timeout.connect(show_prepare, CONNECT_ONE_SHOT)
-            return
-        else:
-            board[selected_slot] = dst; board[index] = src; selected_slot = index
+        _move_board_item(selected_slot, index)
+        return
+    show_prepare()
+
+func _slot_dropped(from_index: int, to_index: int) -> void:
+    if from_index < 0 or from_index >= board.size():
+        return
+    if to_index < 0 or to_index >= board.size() or from_index == to_index:
+        return
+    selected_slot = from_index
+    _move_board_item(from_index, to_index)
+
+func _shop_item_dropped(offer_index: int, to_index: int) -> void:
+    if offer_index < 0 or offer_index >= shop.size():
+        return
+    if to_index < 0 or to_index >= board.size() or board[to_index] != null:
+        return
+    var item: Dictionary = shop[offer_index]
+    var cost := GameDataRef.item_cost(item["id"], int(item["tier"]))
+    if scrap < cost:
+        return
+    scrap -= cost
+    board[to_index] = item.duplicate(true)
+    selected_slot = to_index
+    _roll_shop()
+    show_prepare()
+
+func _move_board_item(from_index: int, to_index: int) -> void:
+    var src = board[from_index]
+    if src == null:
+        selected_slot = -1
+        show_prepare()
+        return
+    var dst = board[to_index]
+    if dst == null:
+        board[to_index] = src
+        board[from_index] = null
+        selected_slot = to_index
+    elif src["id"] == dst["id"] and int(src["tier"]) == int(dst["tier"]) and int(src["tier"]) < GameDataRef.MAX_TIER:
+        var merged_id: String = src["id"]
+        board[to_index] = {"id": merged_id, "tier": int(src["tier"]) + 1}
+        board[from_index] = null
+        selected_slot = -1
+        sfx_merge.play()
+        _play_merge_fx(to_index, merged_id)
+        get_tree().create_timer(0.28).timeout.connect(show_prepare, CONNECT_ONE_SHOT)
+        return
+    else:
+        board[from_index] = dst
+        board[to_index] = src
+        selected_slot = to_index
     show_prepare()
 
 func _play_merge_fx(index: int, item_id: String) -> void:
@@ -616,30 +714,122 @@ func _play_merge_fx(index: int, item_id: String) -> void:
 
 func _selected_description() -> String:
     if selected_slot < 0 or board[selected_slot] == null:
-        return "Тапни предмет, затем другую клетку: перенос, обмен или слияние одинаковых уровней."
+        return "Выбери предмет, чтобы увидеть его точный вклад в сборку."
     var item = board[selected_slot]
-    var d: Dictionary = GameDataRef.ITEMS[item["id"]]
-    return "%s · T%d — %s" % [d["name"], int(item["tier"]), d["desc"]]
+    var data: Dictionary = GameDataRef.ITEMS[item["id"]]
+    return "%s · T%d — %s" % [data["name"], int(item["tier"]), data["desc"]]
+
+func _selected_item_panel() -> PanelContainer:
+    var panel := _panel()
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 12)
+    if selected_slot < 0 or board[selected_slot] == null:
+        row.add_child(_art("res://assets/items/thread.png", Vector2(68, 68)))
+        var hint := VBoxContainer.new()
+        hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        hint.add_child(_label("Предмет не выбран", 21, C_TEXT))
+        hint.add_child(_label("Коснись предмета для подробностей или перетащи его в другую клетку.", 17, C_MUTED))
+        row.add_child(hint)
+    else:
+        var item: Dictionary = board[selected_slot]
+        var data: Dictionary = GameDataRef.ITEMS[item["id"]]
+        row.add_child(_art(data["icon"], Vector2(78, 78)))
+        var copy := VBoxContainer.new()
+        copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        copy.add_theme_constant_override("separation", 3)
+        copy.add_child(_label("%s · T%d %s" % [data["name"], int(item["tier"]), data["kind"]], 21, _tier_color(int(item["tier"]))))
+        copy.add_child(_label(_item_effect_summary(item["id"], int(item["tier"]), selected_slot), 17, C_GOLD))
+        copy.add_child(_label(data["desc"], 16, C_MUTED))
+        row.add_child(copy)
+    panel.add_child(_margin(row, 12))
+    return panel
+
+func _item_effect_summary(id: String, tier: int, index := -1) -> String:
+    var mult := GameDataRef.tier_mult(tier)
+    var threads := 0
+    var neighbors := 0
+    var summary := ""
+    if index >= 0:
+        threads = _adjacent_count(index, func(other): return other["id"] == "thread")
+        neighbors = _neighbors(index).filter(func(cell): return board[cell] != null).size()
+    match id:
+        "blade":
+            summary = "+%d урона • +%d к каждому 4-му удару" % [int(8.0 * mult * (1.0 + threads * 0.15)), int(5.0 * mult * (1.0 + threads * 0.20))]
+        "buckler":
+            summary = "+%d здоровья • +%.1f брони" % [int(28.0 * mult), 3.2 * mult]
+        "sigil":
+            summary = "%.1f магического урона за импульс" % (9.0 * mult * (1.0 + threads * 0.22))
+        "boot":
+            summary = "+%.2f атак/с • +%.1f%% уклонения" % [0.10 * mult, 1.2 * mult]
+        "charm":
+            summary = "+%d здоровья • %.1f%% вампиризма" % [int(9.0 * mult), 1.8 * mult]
+        "cog":
+            summary = "+%.2f атак/с • +%.1f%% критического шанса" % [0.075 * mult, 1.8 * mult]
+        "lantern":
+            summary = "+%d здоровья • %.1f здоровья/с" % [int(8.0 * mult), 1.8 * mult]
+        "thread":
+            summary = "%d соседей • +%.1f%% общего урона" % [neighbors, neighbors * 1.8 * tier]
+        "rune":
+            summary = "+%.1f%% критического шанса" % (2.8 * mult)
+        "bell":
+            summary = "%.1f урона и оглушение каждые 3,6 с" % (7.0 * mult)
+        "mirror":
+            summary = "+%.1f%% уклонения • усиление после уклонения" % (2.5 * mult)
+        "spindle":
+            summary = "+%d урона • +%d здоровья" % [int(4.0 * mult * (1.0 + threads * 0.30)), int(13.0 * mult * (1.0 + threads * 0.20))]
+    return summary
 
 func _dismantle_selected() -> void:
     if selected_slot < 0 or board[selected_slot] == null: return
     var item = board[selected_slot]
-    scrap += max(2, int(GameDataRef.item_cost(item["id"], int(item["tier"])) * 0.45))
+    scrap += _dismantle_value(item)
     board[selected_slot] = null
     selected_slot = -1
     show_prepare()
 
-func _shuffle_board() -> void:
-    var items := []
-    for it in board:
-        if it != null: items.append(it)
-    board.clear()
-    for _i in range(GameDataRef.BOARD_SIZE): board.append(null)
-    var cells := range(GameDataRef.BOARD_SIZE)
-    cells.shuffle()
-    for i in range(items.size()): board[cells[i]] = items[i]
+func _dismantle_value(item: Dictionary) -> int:
+    return maxi(2, int(GameDataRef.item_cost(item["id"], int(item["tier"])) * 0.45))
+
+func _auto_arrange_board() -> void:
+    var best_score := _build_score()
+    for _pass_index in range(4):
+        var improved := false
+        for left in range(board.size() - 1):
+            for right in range(left + 1, board.size()):
+                if board[left] == null and board[right] == null:
+                    continue
+                var held = board[left]
+                board[left] = board[right]
+                board[right] = held
+                var candidate_score := _build_score()
+                if candidate_score > best_score + 0.001:
+                    best_score = candidate_score
+                    improved = true
+                else:
+                    held = board[left]
+                    board[left] = board[right]
+                    board[right] = held
+        if not improved:
+            break
     selected_slot = -1
     show_prepare()
+
+func _build_score() -> float:
+    var stats := _calculate_stats()
+    return (
+        float(stats["attack"]) * 2.0
+        + float(stats["max_hp"]) * 0.24
+        + float(stats["armor"]) * 4.0
+        + float(stats["attack_speed"]) * 32.0
+        + float(stats["crit"]) * 105.0
+        + float(stats["dodge"]) * 90.0
+        + float(stats["lifesteal"]) * 90.0
+        + float(stats["regen"]) * 8.0
+        + float(stats["magic"]) * 1.5
+        + float(stats["bell"])
+        + float(stats["link_score"]) * 4.0
+        + (float(stats["damage_mult"]) - 1.0) * 120.0
+    )
 
 func _roll_shop(initial := false) -> void:
     shop.clear()
@@ -669,15 +859,37 @@ func _reroll_shop() -> void:
     _roll_shop()
     show_prepare()
 
-func _make_offer(index: int) -> VBoxContainer:
+func _make_offer(index: int) -> PanelContainer:
     var item = shop[index]
     var d: Dictionary = GameDataRef.ITEMS[item["id"]]
-    var box := VBoxContainer.new(); box.size_flags_horizontal = Control.SIZE_EXPAND_FILL; box.add_theme_constant_override("separation", 4)
-    var icon := TextureRect.new(); icon.texture = load(d["icon"]); icon.custom_minimum_size = Vector2(70,70); icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE; icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED; box.add_child(icon)
-    box.add_child(_label(d["name"], 15, C_TEXT, HORIZONTAL_ALIGNMENT_CENTER))
+    var panel := PanelContainer.new()
+    panel.add_theme_stylebox_override("panel", _style_box(Color("303849"), 12, Color("4b5870"), 1))
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 10)
     var cost := GameDataRef.item_cost(item["id"], int(item["tier"]))
-    var b := _button("%d⚙" % cost, _buy_offer.bind(index), 44, false); b.disabled = scrap < cost or _first_empty_slot() < 0; box.add_child(b)
-    return box
+    var drag_icon := ShopDragIconRef.new()
+    drag_icon.texture = load(d["icon"])
+    drag_icon.custom_minimum_size = Vector2(74, 74)
+    drag_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    drag_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    drag_icon.tooltip_text = "Перетащить в свободную клетку"
+    drag_icon.configure(index, int(item["tier"]), _tier_color(int(item["tier"])), scrap >= cost and _first_empty_slot() >= 0)
+    row.add_child(drag_icon)
+    var copy := VBoxContainer.new()
+    copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    copy.add_theme_constant_override("separation", 2)
+    copy.add_child(_label("%s · T%d" % [d["name"], int(item["tier"])], 19, _tier_color(int(item["tier"]))))
+    copy.add_child(_label("%s · %s" % [d["kind"], _item_effect_summary(item["id"], int(item["tier"]))], 15, C_GOLD))
+    copy.add_child(_label(d["desc"], 15, C_MUTED))
+    row.add_child(copy)
+    var buy := _button("Купить\n%d⚙" % cost, _buy_offer.bind(index), 58, false)
+    buy.custom_minimum_size.x = 110
+    buy.add_theme_font_size_override("font_size", 18)
+    buy.disabled = scrap < cost or _first_empty_slot() < 0
+    buy.tooltip_text = "Не хватает деталей" if scrap < cost else ("Сетка заполнена" if _first_empty_slot() < 0 else "Добавить в первую свободную клетку")
+    row.add_child(buy)
+    panel.add_child(_margin(row, 9))
+    return panel
 
 func _buy_offer(index: int) -> void:
     if index < 0 or index >= shop.size(): return
@@ -704,14 +916,94 @@ func _tier_color(tier: int) -> Color:
         _: return C_TEXT
 
 func _show_tutorial_overlay() -> void:
-    var overlay := ColorRect.new(); overlay.color = Color(0.03,0.04,0.06,0.82); overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); screen_root.add_child(overlay)
-    var center := CenterContainer.new(); center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT); overlay.add_child(center)
-    var p := _panel(); var vb := VBoxContainer.new(); vb.add_theme_constant_override("separation",12)
-    p.custom_minimum_size.x = 630
-    vb.add_child(_label("Как работает мастерская", 30, C_TEXT))
-    vb.add_child(_label("1. Купи предмет.\n2. Тапни предмет на сетке и затем другую клетку.\n3. Два одинаковых предмета одного T-уровня сольются.\n4. Соседство важно: нити усиливают предметы вокруг себя.\n5. Нажми «В БОЙ» — дальше герой сражается сам.", 22, C_TEXT))
-    vb.add_child(_button("Понятно", _dismiss_tutorial, 62, true))
-    p.add_child(_margin(vb,22)); center.add_child(p)
+    tutorial_step = 0
+    tutorial_overlay = ColorRect.new()
+    tutorial_overlay.color = Color(0.02, 0.025, 0.045, 0.94)
+    tutorial_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    screen_root.add_child(tutorial_overlay)
+    _render_tutorial_page()
+
+func _tutorial_pages() -> Array:
+    return [
+        {
+            "title": "Сначала — план",
+            "art": "res://assets/items/spindle.png",
+            "body": "Перед каждым боем ты собираешь героя из артефактов. Предметы меняют урон, защиту, скорость и особые эффекты.",
+            "tip": "Посмотри на следующего противника и подстрой сборку под его особенность."
+        },
+        {
+            "title": "Перемещай и сшивай",
+            "art": "res://assets/items/blade.png",
+            "body": "Перетащи предмет в другую клетку. Если там лежит такой же предмет того же уровня, они сольются. Артефакт из лавки можно сразу перетащить в свободную клетку.",
+            "tip": "Можно играть и тапами: выбери предмет, затем коснись клетки назначения. Кнопка покупки тоже остаётся доступной."
+        },
+        {
+            "title": "Строй связи",
+            "art": "res://assets/items/thread.png",
+            "body": "Учитываются соседние клетки сверху, снизу, слева и справа. Цветные линии показывают уже работающие сочетания.",
+            "tip": "Бирюзовый — нить, золотой — сталь, фиолетовый — магия, голубой — механизм с руной."
+        },
+        {
+            "title": "Читай результат",
+            "art": "res://assets/items/sigil.png",
+            "body": "Панель «Сборка героя» показывает итоговые параметры. Коснись любого предмета, чтобы увидеть его точный числовой вклад.",
+            "tip": "Высокий урон не всегда важнее брони, лечения или скорости атаки."
+        },
+        {
+            "title": "Вмешивайся в бой",
+            "art": "res://assets/actors/hero.png",
+            "body": "Герой атакует сам, но Импульс связи находится под твоим контролем. Заряди его ударами и нажми в нужный момент.",
+            "tip": "Импульс наносит урон, восстанавливает здоровье и ненадолго задерживает атаку врага."
+        }
+    ]
+
+func _render_tutorial_page() -> void:
+    if tutorial_overlay == null or not is_instance_valid(tutorial_overlay):
+        return
+    for child in tutorial_overlay.get_children():
+        child.queue_free()
+    var pages := _tutorial_pages()
+    tutorial_step = clampi(tutorial_step, 0, pages.size() - 1)
+    var page: Dictionary = pages[tutorial_step]
+    var center := CenterContainer.new()
+    center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    tutorial_overlay.add_child(center)
+    var panel := _panel()
+    panel.custom_minimum_size.x = 630
+    var content := VBoxContainer.new()
+    content.add_theme_constant_override("separation", 12)
+    var progress := _label("ОБУЧЕНИЕ  •  %d/%d" % [tutorial_step + 1, pages.size()], 17, C_GOLD, HORIZONTAL_ALIGNMENT_CENTER)
+    content.add_child(progress)
+    content.add_child(_art(page["art"], Vector2(0, 126)))
+    content.add_child(_label(page["title"], 31, C_TEXT, HORIZONTAL_ALIGNMENT_CENTER))
+    content.add_child(_label(page["body"], 21, C_TEXT, HORIZONTAL_ALIGNMENT_CENTER))
+    var tip_panel := PanelContainer.new()
+    tip_panel.add_theme_stylebox_override("panel", _style_box(Color("30394a"), 12, Color(C_ACCENT, 0.45), 2))
+    tip_panel.add_child(_margin(_label(page["tip"], 18, C_ACCENT, HORIZONTAL_ALIGNMENT_CENTER), 12))
+    content.add_child(tip_panel)
+    var controls := HBoxContainer.new()
+    controls.add_theme_constant_override("separation", 10)
+    var back := _button("Назад", _tutorial_previous, 58)
+    back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    back.disabled = tutorial_step == 0
+    controls.add_child(back)
+    var next_text := "В мастерскую" if tutorial_step == pages.size() - 1 else "Далее"
+    var next_action := _dismiss_tutorial if tutorial_step == pages.size() - 1 else _tutorial_next
+    var next := _button(next_text, next_action, 58, true)
+    next.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    controls.add_child(next)
+    content.add_child(controls)
+    content.add_child(_button("Пропустить обучение", _dismiss_tutorial, 48))
+    panel.add_child(_margin(content, 22))
+    center.add_child(panel)
+
+func _tutorial_next() -> void:
+    tutorial_step += 1
+    _render_tutorial_page()
+
+func _tutorial_previous() -> void:
+    tutorial_step -= 1
+    _render_tutorial_page()
 
 func _dismiss_tutorial() -> void:
     save_data["tutorial_seen"] = true
@@ -807,6 +1099,9 @@ func start_battle() -> void:
     bell_timer = 2.8
     regen_timer = 1.0
     enemy_hit_count = 0; hero_attack_count = 0; enemy_stun = 0.0; mirror_charge = false
+    hero_attack_interval = maxf(0.25, 1.0 / float(battle_stats["attack_speed"]))
+    enemy_attack_interval = 1.0 / float(enemy_data["speed"])
+    link_pulse_charge = 25.0
     battle_speed = 1.0
     battle_paused = false
 
@@ -843,13 +1138,16 @@ func start_battle() -> void:
     enemy_hp_bar = _hp_bar(enemy_max_hp, enemy_hp, C_DANGER); enemy_hp_bar.position=Vector2(360,460); enemy_hp_bar.size=Vector2(280,28); combat_area.add_child(enemy_hp_bar)
     hero_hp_label = _label("", 18, C_TEXT); hero_hp_label.position=Vector2(20,495); hero_hp_label.size=Vector2(280,30); combat_area.add_child(hero_hp_label)
     enemy_hp_label = _label("", 18, C_TEXT, HORIZONTAL_ALIGNMENT_RIGHT); enemy_hp_label.position=Vector2(360,495); enemy_hp_label.size=Vector2(280,30); combat_area.add_child(enemy_hp_label)
+    hero_action_bar = _hp_bar(1.0, 0.0, C_GOLD); hero_action_bar.position=Vector2(20,535); hero_action_bar.size=Vector2(280,10); combat_area.add_child(hero_action_bar)
+    enemy_action_bar = _hp_bar(1.0, 0.0, Color("ef8c72")); enemy_action_bar.position=Vector2(360,535); enemy_action_bar.size=Vector2(280,10); combat_area.add_child(enemy_action_bar)
 
-    battle_log_label = _label("Связи натянуты. Бой начинается.", 20, C_TEXT, HORIZONTAL_ALIGNMENT_CENTER); battle_log_label.custom_minimum_size.y=70; v.add_child(battle_log_label)
-    var statline := "ATK %d  •  CRIT %d%%  •  уклон %d%%  •  вамп %d%%" % [int(battle_stats["attack"]), int(float(battle_stats["crit"])*100), int(float(battle_stats["dodge"])*100), int(float(battle_stats["lifesteal"])*100)]
+    battle_log_label = _label("Противники сходятся.", 20, C_TEXT, HORIZONTAL_ALIGNMENT_CENTER); battle_log_label.custom_minimum_size.y=70; v.add_child(battle_log_label)
+    var statline := "Урон %d  •  крит %d%%  •  уклон %d%%  •  вампиризм %d%%" % [int(battle_stats["attack"]), int(float(battle_stats["crit"])*100), int(float(battle_stats["dodge"])*100), int(float(battle_stats["lifesteal"])*100)]
     v.add_child(_label(statline, 18, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+    v.add_child(_build_link_pulse_panel())
     battle_continue_button = _button("...", _noop, 68, true); battle_continue_button.visible=false; v.add_child(battle_continue_button)
-    _update_battle_ui()
     battle_active = true
+    _update_battle_ui()
     var opening_caption := "ПЕРВЫЙ УЗЕЛ" if enemy_id == "first_weaver" else "СВЯЗЬ"
     _spawn_battle_caption(opening_caption, Vector2(330, 340), C_ACCENT)
 
@@ -876,6 +1174,27 @@ func _add_actor_grounding(parent: Control, pos: Vector2, color: Color) -> void:
 func _hp_bar(maxv: float, value: float, color := C_ACCENT) -> ProgressBar:
     var b := ProgressBar.new(); b.max_value=maxv; b.value=value; b.show_percentage=false; b.add_theme_stylebox_override("background", _style_box(Color("2b303c"),8)); b.add_theme_stylebox_override("fill", _style_box(color,8)); return b
 
+func _build_link_pulse_panel() -> PanelContainer:
+    var panel := _panel()
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 12)
+    var copy := VBoxContainer.new()
+    copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    copy.add_theme_constant_override("separation", 5)
+    copy.add_child(_label("Импульс связи", 21, C_ACCENT))
+    copy.add_child(_label("Заряжается в бою. Наносит урон, лечит героя и сбивает атаку врага.", 16, C_MUTED))
+    link_pulse_bar = _hp_bar(100.0, link_pulse_charge, C_ACCENT)
+    link_pulse_bar.custom_minimum_size.y = 14
+    copy.add_child(link_pulse_bar)
+    row.add_child(copy)
+    link_pulse_button = _button("ИМПУЛЬС\n25%", _use_link_pulse, 68, true)
+    link_pulse_button.custom_minimum_size.x = 190
+    link_pulse_button.add_theme_font_size_override("font_size", 19)
+    link_pulse_button.disabled = true
+    row.add_child(link_pulse_button)
+    panel.add_child(_margin(row, 12))
+    return panel
+
 func _toggle_battle_speed() -> void:
     battle_speed = 2.0 if battle_speed < 1.5 else 1.0
     if screen_root != null:
@@ -891,7 +1210,7 @@ func _toggle_battle_pause() -> void:
         if button != null:
             button.text = "▶" if battle_paused else "Ⅱ"
     if battle_log_label != null:
-        battle_log_label.text = "Бой на паузе." if battle_paused else "Связь снова натянута."
+        battle_log_label.text = "Бой приостановлен." if battle_paused else "Бой продолжается."
 
 func _battle_tick(delta: float) -> void:
     hero_timer -= delta
@@ -906,12 +1225,14 @@ func _battle_tick(delta: float) -> void:
     if hero_timer <= 0.0:
         _hero_attack()
         if not battle_active: return
-        hero_timer = max(0.25, 1.0 / float(battle_stats["attack_speed"]))
+        hero_attack_interval = maxf(0.25, 1.0 / float(battle_stats["attack_speed"]))
+        hero_timer = hero_attack_interval
     if magic_timer <= 0.0 and float(battle_stats["magic"]) > 0:
         var dmg := float(battle_stats["magic"]) * float(battle_stats["damage_mult"])
         _spawn_battle_icon("res://assets/items/sigil.png", enemy_actor, C_ACCENT)
         _damage_enemy(dmg, "Знак связи вспыхивает: −%d" % int(dmg), C_ACCENT)
         if not battle_active: return
+        _add_link_pulse_charge(7.0)
         magic_timer = max(0.72, 2.45 - float(battle_stats["link_score"]) * 0.018)
     if bell_timer <= 0.0 and float(battle_stats["bell"]) > 0:
         var dmg := float(battle_stats["bell"])
@@ -919,6 +1240,7 @@ func _battle_tick(delta: float) -> void:
         _spawn_battle_icon("res://assets/items/bell.png", enemy_actor, Color("c39cff"))
         _damage_enemy(dmg, "Колокол сбивает ритм: −%d" % int(dmg), Color("c39cff"))
         if not battle_active: return
+        _add_link_pulse_charge(7.0)
         bell_timer = 3.6
     if regen_timer <= 0.0 and float(battle_stats["regen"]) > 0:
         var healed: float = minf(float(battle_stats["regen"]), hero_max_hp - hero_hp)
@@ -931,7 +1253,8 @@ func _battle_tick(delta: float) -> void:
         var speed := float(enemy_data["speed"])
         if enemy_id == "clock_husk" and enemy_hp < enemy_max_hp * 0.5: speed *= 1.35
         if enemy_id == "first_weaver" and enemy_hp < enemy_max_hp * 0.5: speed *= 1.22
-        enemy_timer = 1.0 / speed
+        enemy_attack_interval = 1.0 / speed
+        enemy_timer = enemy_attack_interval
     _update_battle_ui()
 
 func _animate_idle(node: Control, phase: float, amount: float) -> void:
@@ -966,7 +1289,11 @@ func _hero_attack() -> void:
     _animate_attack(hero_actor, 22.0)
     if blade_triggered:
         _spawn_battle_icon("res://assets/items/blade.png", enemy_actor, C_GOLD)
+    if critical:
+        _screen_flash(C_GOLD, 0.10)
     _damage_enemy(dmg, text, C_GOLD if critical else C_TEXT)
+    if battle_active:
+        _add_link_pulse_charge(20.0 + minf(8.0, float(battle_stats["link_score"]) * 0.35))
     var heal := dmg * float(battle_stats["lifesteal"])
     if heal > 0:
         hero_hp = min(hero_max_hp, hero_hp + heal)
@@ -980,6 +1307,7 @@ func _enemy_attack() -> void:
         mirror_charge = _has_item("mirror")
         _animate_dodge(hero_actor)
         _floating_text("УКЛОН", hero_actor, C_ACCENT)
+        _add_link_pulse_charge(16.0)
         return
     var raw := float(enemy_data["atk"]) * GameDataRef.chapter_scale(chapter_index, stage_index)
     if enemy_id == "chapel_shade" and enemy_hit_count % 3 == 0: raw *= 1.65
@@ -991,13 +1319,16 @@ func _enemy_attack() -> void:
         raw *= 1.55
         _spawn_battle_caption("НОВЫЙ УЗОР", Vector2(330, 340), Color("b993ff"))
     var reduced: float = maxf(1.0, raw - float(battle_stats["armor"])) * float(battle_stats["guard_mult"])
-    hero_hp -= reduced
+    hero_hp = maxf(0.0, hero_hp - reduced)
     battle_log_label.text = "%s наносит %d урона." % [enemy_data["name"], int(reduced)]
     sfx_hit.play()
     _animate_attack(enemy_actor, -22.0)
     _floating_text("-%d" % int(reduced), hero_actor, C_DANGER)
+    _burst_particles(hero_actor.position + hero_actor.size * 0.5, C_DANGER, 7)
+    _screen_flash(C_DANGER, 0.065)
+    _add_link_pulse_charge(12.0)
     if hero_hp <= 0:
-        hero_hp=0
+        _update_battle_ui()
         _animate_death(hero_actor, -1.0)
         _battle_defeat()
     else:
@@ -1005,12 +1336,13 @@ func _enemy_attack() -> void:
 
 func _damage_enemy(dmg: float, text: String, fx_color := C_TEXT) -> void:
     if not battle_active: return
-    enemy_hp -= dmg
+    enemy_hp = maxf(0.0, enemy_hp - dmg)
     battle_log_label.text = text
     sfx_hit.play()
     _floating_text("-%d" % int(dmg), enemy_actor, fx_color)
+    _burst_particles(enemy_actor.position + enemy_actor.size * 0.5, fx_color, 7)
     if enemy_hp <= 0:
-        enemy_hp = 0
+        _update_battle_ui()
         _animate_death(enemy_actor, 1.0)
         _battle_victory()
     else:
@@ -1021,8 +1353,9 @@ func _animate_attack(node: Control, dx: float) -> void:
     if _reduced_motion(): return
     var origin := node.position
     var tw := node.create_tween()
-    tw.tween_property(node, "position", origin + Vector2(dx, -4), 0.065).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-    tw.tween_property(node, "position", origin, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+    tw.tween_property(node, "position", origin + Vector2(-dx * 0.22, 3), 0.055).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+    tw.tween_property(node, "position", origin + Vector2(dx, -5), 0.075).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+    tw.tween_property(node, "position", origin, 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 func _animate_hit(node: Control) -> void:
     if node == null or not is_instance_valid(node): return
@@ -1061,11 +1394,14 @@ func _floating_text(text: String, actor: Control, color: Color) -> void:
     var l := _label(text, 24, color, HORIZONTAL_ALIGNMENT_CENTER)
     l.position = actor.position + Vector2(35, 15)
     l.size = Vector2(140, 42)
+    l.pivot_offset = l.size * 0.5
+    l.scale = Vector2(0.72, 0.72)
     l.mouse_filter = Control.MOUSE_FILTER_IGNORE
     combat_area.add_child(l)
     var tw := l.create_tween()
     tw.set_parallel(true)
     tw.tween_property(l, "position", l.position + Vector2(0, -54), 0.55).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+    tw.tween_property(l, "scale", Vector2(1.12, 1.12), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
     tw.tween_property(l, "modulate", Color(color.r, color.g, color.b, 0.0), 0.55)
     tw.chain().tween_callback(l.queue_free)
 
@@ -1103,6 +1439,69 @@ func _spawn_battle_caption(text: String, pos: Vector2, color: Color) -> void:
     tw.tween_property(l, "modulate", Color(color.r, color.g, color.b, 0.0), 0.30)
     tw.tween_callback(l.queue_free)
 
+func _burst_particles(origin: Vector2, color: Color, count := 6) -> void:
+    if combat_area == null or _reduced_motion():
+        return
+    for particle_index in range(count):
+        var particle := ColorRect.new()
+        var particle_size := float(rng.randi_range(5, 10))
+        particle.color = color
+        particle.position = origin - Vector2(particle_size, particle_size) * 0.5
+        particle.size = Vector2(particle_size, particle_size)
+        particle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        combat_area.add_child(particle)
+        var angle := TAU * float(particle_index) / float(count) + rng.randf_range(-0.24, 0.24)
+        var distance := rng.randf_range(34.0, 68.0)
+        var target := particle.position + Vector2(cos(angle), sin(angle)) * distance
+        var tween := particle.create_tween().set_parallel(true)
+        tween.tween_property(particle, "position", target, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+        tween.tween_property(particle, "modulate", Color(color.r, color.g, color.b, 0.0), 0.30)
+        tween.chain().tween_callback(particle.queue_free)
+
+func _screen_flash(color: Color, alpha: float) -> void:
+    if screen_root == null or _reduced_motion():
+        return
+    var flash := ColorRect.new()
+    flash.color = Color(color.r, color.g, color.b, alpha)
+    flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    screen_root.add_child(flash)
+    var tween := flash.create_tween()
+    tween.tween_property(flash, "modulate", Color(1.0, 1.0, 1.0, 0.0), 0.16)
+    tween.tween_callback(flash.queue_free)
+
+func _add_link_pulse_charge(amount: float) -> void:
+    if not battle_active:
+        return
+    link_pulse_charge = minf(100.0, link_pulse_charge + amount)
+    _update_link_pulse_ui()
+
+func _use_link_pulse() -> void:
+    if not battle_active or battle_paused or link_pulse_charge < 99.9:
+        return
+    link_pulse_charge = 0.0
+    enemy_stun = maxf(enemy_stun, 0.85)
+    var damage := float(battle_stats["attack"]) * 1.35 + float(battle_stats["magic"]) * 0.65 + float(battle_stats["link_score"]) * 1.8
+    var healing := minf(hero_max_hp - hero_hp, hero_max_hp * 0.06)
+    hero_hp += healing
+    _spawn_battle_caption("ИМПУЛЬС", Vector2(330, 330), C_ACCENT)
+    _spawn_battle_icon("res://assets/items/thread.png", enemy_actor, C_ACCENT)
+    _burst_particles(enemy_actor.position + enemy_actor.size * 0.5, C_ACCENT, 12)
+    _screen_flash(C_ACCENT, 0.12)
+    _animate_attack(hero_actor, 34.0)
+    if healing > 0.1:
+        _floating_text("+%d" % int(healing), hero_actor, C_ACCENT)
+    _damage_enemy(damage, "Импульс связи наносит %d урона и сбивает атаку." % int(damage), C_ACCENT)
+    _update_battle_ui()
+
+func _update_link_pulse_ui() -> void:
+    if link_pulse_bar != null and is_instance_valid(link_pulse_bar):
+        link_pulse_bar.value = link_pulse_charge
+    if link_pulse_button != null and is_instance_valid(link_pulse_button):
+        var ready := link_pulse_charge >= 99.9 and battle_active and not battle_paused
+        link_pulse_button.disabled = not ready
+        link_pulse_button.text = "ИМПУЛЬС\nГОТОВ" if link_pulse_charge >= 99.9 else "ИМПУЛЬС\n%d%%" % int(link_pulse_charge)
+
 func _has_item(id: String) -> bool:
     for it in board:
         if it != null and it["id"] == id: return true
@@ -1113,11 +1512,17 @@ func _update_battle_ui() -> void:
     hero_hp_bar.value = hero_hp; enemy_hp_bar.value = enemy_hp
     hero_hp_label.text = "%d / %d" % [int(hero_hp), int(hero_max_hp)]
     enemy_hp_label.text = "%d / %d" % [int(enemy_hp), int(enemy_max_hp)]
+    if hero_action_bar != null and is_instance_valid(hero_action_bar):
+        hero_action_bar.value = 1.0 - clampf(hero_timer / maxf(hero_attack_interval, 0.001), 0.0, 1.0)
+    if enemy_action_bar != null and is_instance_valid(enemy_action_bar):
+        enemy_action_bar.value = 1.0 - clampf(enemy_timer / maxf(enemy_attack_interval, 0.001), 0.0, 1.0)
+    _update_link_pulse_ui()
 
 func _battle_victory() -> void:
     if not battle_active: return
     battle_active = false
     battle_paused = false
+    _update_battle_ui()
     sfx_victory.play()
     var reward := int(enemy_data["reward"]) + stage_index * 2
     scrap += reward
@@ -1145,7 +1550,7 @@ func show_loot_choice(keep_choices := false) -> void:
 
     var v := _main_vbox(52, 26, 16)
     v.add_child(_label("Награда за бой", 34, C_GOLD, HORIZONTAL_ALIGNMENT_CENTER))
-    v.add_child(_label("Выбери один артефакт. Никаких сундуков за рекламу — только решение для текущего билда.", 20, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+    v.add_child(_label("Выбери артефакт, который лучше всего дополнит текущую сборку.", 20, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 10)
@@ -1215,6 +1620,7 @@ func _battle_defeat() -> void:
     if not battle_active: return
     battle_active = false
     battle_paused = false
+    _update_battle_ui()
     var earned := 4 + chapter_index * 3 + stage_index * 3
     save_data["embers"] = int(save_data["embers"]) + earned
     _clear_active_run()
@@ -1292,7 +1698,7 @@ func show_upgrades() -> void:
     ember_row.add_child(_art("res://assets/props/ember_shard.png", Vector2(46, 46)))
     ember_row.add_child(_label("Искры: %d" % int(save_data["embers"]), 28, C_GOLD))
     v.add_child(ember_row)
-    v.add_child(_label("Постоянные узлы меняют старт каждого забега. Никаких премиальных валют: Искры даются за обычную игру.", 20, C_MUTED))
+    v.add_child(_label("Искры сохраняются между забегами. Вложи их в постоянные улучшения героя.", 20, C_MUTED))
     _upgrade_card(v, "attack_knot", "Узел натяжения", "+4% базовой атаки за уровень", 8, "res://assets/props/attack_up.png")
     _upgrade_card(v, "vital_knot", "Узел дыхания", "+6% базового здоровья за уровень", 8, "res://assets/props/defense_up.png")
     _upgrade_card(v, "purse_knot", "Карман мастера", "+2 детали в начале забега за уровень", 10, "res://assets/props/treasure_chest.png")
@@ -1359,7 +1765,7 @@ func show_settings() -> void:
     title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     head.add_child(title)
     v.add_child(head)
-    v.add_child(_label("Игра полностью офлайн. Настройки хранятся только на этом устройстве.", 20, C_MUTED))
+    v.add_child(_label("Настройки и прогресс хранятся только на этом устройстве.", 20, C_MUTED))
 
     var settings := _settings()
     var volume := int(round(float(settings.get("sfx_volume", 0.85)) * 100.0))
@@ -1382,7 +1788,7 @@ func show_settings() -> void:
         _toggle_screen_shake
     ))
     v.add_child(_button("Повторить обучение", _reset_tutorial, 58))
-    v.add_child(_label("RELIC WEAVER · версия %s\nДизайн, код и мир созданы как самостоятельная офлайн-игра.", 18, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
+    v.add_child(_label("RELIC WEAVER · версия %s\nОфлайн-игра без сетевых функций.", 18, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 
 func _settings_card(title: String, description: String, action_text: String, callback: Callable) -> PanelContainer:
     var panel := _panel()

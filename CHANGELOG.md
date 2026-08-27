@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0 — Живой узор (2026-08-27)
+
+- Removed fractional background zoom that made nearest-filtered pixel art shimmer.
+- Fixed defeated enemies retaining visible HP until the next simulation tick.
+- Added drag-and-drop for board rearrangement, merging and direct shop purchases while preserving tap controls.
+- Rebuilt the workshop around an enemy preview, complete build statistics, exact per-item contributions and readable shop cards.
+- Replaced random board shuffling with a deterministic auto-arrange optimizer that never accepts a weaker layout.
+- Added the player-controlled Link Pulse: a charged attack that deals damage, heals and interrupts the enemy.
+- Added attack-readiness bars, anticipation frames, hit particles, critical flashes and improved damage-number motion.
+- Replaced the single tutorial paragraph with a five-page illustrated onboarding flow.
+- Rewrote item, enemy and interface copy for clearer mechanics and a more natural Russian voice.
+- Added regression checks for stable backgrounds, drag-and-drop, auto-arrange, Link Pulse and zero HP on death.
+
 ## 1.0.1 — Самостоятельные desktop-сборки (2026-08-27)
 
 - Embedded game data into the Linux and Windows executables so each platform is a complete single-file download.

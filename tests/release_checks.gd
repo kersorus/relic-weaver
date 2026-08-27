@@ -10,11 +10,11 @@ func _init() -> void:
 
 func _run_checks() -> void:
     _check(
-        str(ProjectSettings.get_setting("application/config/version", "")) == "1.0.1",
-        "project version is 1.0.1"
+        str(ProjectSettings.get_setting("application/config/version", "")) == "1.1.0",
+        "project version is 1.1.0"
     )
     _check(
-        FileAccess.get_file_as_string("res://VERSION").strip_edges() == "1.0.1",
+        FileAccess.get_file_as_string("res://VERSION").strip_edges() == "1.1.0",
         "VERSION file matches project metadata"
     )
     var export_presets := FileAccess.get_file_as_string("res://export_presets.cfg")
@@ -25,6 +25,10 @@ func _run_checks() -> void:
     _check(GameDataRef.ITEMS.size() >= 12, "item catalog has at least 12 artifacts")
     _check(GameDataRef.CHAPTERS.size() >= 4, "campaign has four release chapters")
     _check(GameDataRef.tier_mult(4) > GameDataRef.tier_mult(3), "tier scaling increases")
+    _check(ResourceLoader.exists("res://src/item_slot.gd"), "draggable board slot script exists")
+    _check(ResourceLoader.exists("res://src/shop_drag_icon.gd"), "draggable shop offer script exists")
+    var main_source := FileAccess.get_file_as_string("res://src/main.gd")
+    _check("сундуков за рекламу" not in main_source, "interface copy avoids artificial advertising language")
     _check_catalog_resources()
 
     var sanitized := SaveManagerRef.sanitize({
@@ -53,21 +57,61 @@ func _run_checks() -> void:
     await process_frame
     _check(bool(game.get_meta("boot_ok", false)), "main scene reports boot_ok")
     _check(_tree_contains_text(game, "RELIC WEAVER"), "home screen is visible")
+    _check(game.current_bg.scale == Vector2.ONE, "pixel background remains at a stable scale")
 
+    game.save_data["tutorial_seen"] = false
     game._start_run(0)
     await process_frame
     game.show_prepare()
     await process_frame
+    _check(_tree_contains_text(game, "ОБУЧЕНИЕ  •  1/5"), "five-step tutorial opens for a new player")
+    game._dismiss_tutorial()
+    await process_frame
     _check(game.board.size() == GameDataRef.BOARD_SIZE, "run creates a complete board")
     _check(_count_items(game.board) == 3, "run starts with three artifacts")
     _check(game.shop.size() == 3, "shop has three offers")
+    _check(_tree_contains_text(game, "Следующий противник"), "workshop previews the next enemy")
+    _check(_tree_contains_text(game, "Сборка героя"), "workshop exposes complete build stats")
+    _check(_tree_contains_text(game, "Лавка артефактов"), "shop has a clear section title")
+
+    var moved_id := str(game.board[6]["id"])
+    game._slot_dropped(6, 5)
+    await process_frame
+    _check(game.board[6] == null and str(game.board[5]["id"]) == moved_id, "board items support drag-and-drop")
+
+    var shop_item: Dictionary = game.shop[0].duplicate(true)
+    var scrap_before_shop_drag: int = int(game.scrap)
+    game._shop_item_dropped(0, 0)
+    await process_frame
+    _check(game.board[0] != null and game.board[0]["id"] == shop_item["id"], "shop items can be dragged into a chosen empty slot")
+    _check(game.scrap < scrap_before_shop_drag, "dragging from the shop charges the item cost")
+    game.board[0] = null
+    game.scrap = scrap_before_shop_drag
+
+    var score_before_auto_arrange: float = float(game._build_score())
+    game._auto_arrange_board()
+    await process_frame
+    _check(game._build_score() + 0.001 >= score_before_auto_arrange, "auto-arrange never weakens the build")
 
     game.start_battle()
     await process_frame
     _check(game.battle_active, "battle starts")
     _check(game.enemy_hp > 0.0, "battle enemy has health")
+    _check(game.link_pulse_charge > 0.0, "active link pulse starts partially charged")
+    var hp_before_pulse: float = float(game.enemy_hp)
+    game.hero_hp = maxf(1.0, game.hero_max_hp - 24.0)
+    var hero_hp_before_pulse: float = float(game.hero_hp)
+    game.link_pulse_charge = 100.0
+    game._use_link_pulse()
+    _check(game.enemy_hp < hp_before_pulse, "active link pulse damages the enemy")
+    _check(game.hero_hp > hero_hp_before_pulse, "active link pulse heals the hero")
+    _check(game.enemy_stun >= 0.8, "active link pulse interrupts the enemy")
+    _check(game.link_pulse_charge == 0.0, "active link pulse consumes its charge")
     game._damage_enemy(game.enemy_hp + 1000.0, "release check")
     _check(not game.battle_active, "battle stops after victory")
+    _check(game.enemy_hp == 0.0, "dead enemy health is clamped to zero")
+    _check(game.enemy_hp_bar.value == 0.0, "dead enemy health bar is empty immediately")
+    _check(game.enemy_hp_label.text.begins_with("0 /"), "dead enemy health label shows zero immediately")
     _check(game.stage_index == 1, "victory advances the run")
     _check(game.loot_choices.size() == 3, "victory creates three loot choices")
     _check(_unique_loot_count(game.loot_choices) == 3, "loot choices are unique")
