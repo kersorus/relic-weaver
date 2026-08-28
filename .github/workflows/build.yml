@@ -115,8 +115,8 @@ jobs:
           rm -f import-validation.log
           godot --headless --editor --path . --quit --log-file import-validation.log
           cat import-validation.log
-          if grep -Eq 'SCRIPT ERROR|Failed to load script' import-validation.log; then
-            echo 'Godot import reported a script failure' >&2
+          if grep -Eq '(^|USER |SCRIPT )ERROR:|Failed to load script' import-validation.log; then
+            echo 'Godot import reported an engine or script error' >&2
             exit 1
           fi
 
@@ -131,8 +131,8 @@ jobs:
             echo 'Main scene did not reach RELIC_WEAVER_BOOT_OK' >&2
             exit 1
           fi
-          if grep -Eq 'SCRIPT ERROR|RW_BOOT_FAIL' runtime-smoke.log; then
-            echo 'Runtime smoke test reported a script failure' >&2
+          if grep -Eq '(^|USER |SCRIPT )ERROR:|RW_BOOT_FAIL' runtime-smoke.log; then
+            echo 'Runtime smoke test reported an engine or script error' >&2
             exit 1
           fi
 
@@ -146,8 +146,8 @@ jobs:
             --log-file release-checks.log
           cat release-checks.log
           grep -q 'RELIC_WEAVER_RELEASE_CHECKS_OK' release-checks.log
-          if grep -Eq 'SCRIPT ERROR|RW_CHECK_FAIL' release-checks.log; then
-            echo 'Release gameplay checks reported a failure' >&2
+          if grep -Eq '(^|USER |SCRIPT )ERROR:|RW_CHECK_FAIL' release-checks.log; then
+            echo 'Release gameplay checks reported an engine or script failure' >&2
             exit 1
           fi
 

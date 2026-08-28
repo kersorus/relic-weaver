@@ -8,6 +8,7 @@
 - Added optional mobile haptics for merging, buying, dismantling and Link Pulse activation.
 - Made workshop links readable without color by giving thread, steel, arcane and mechanism links unique markers.
 - Expanded release checks to cover save recovery, destructive-action confirmation, lifecycle pause, remembered speed and link accessibility.
+- Tightened GitHub Actions so any Godot engine error, including resource leaks, blocks exports and tagged releases.
 
 ## 1.1.0 — Живой узор (2026-08-27)
 

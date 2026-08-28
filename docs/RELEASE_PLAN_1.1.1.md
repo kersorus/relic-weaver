@@ -22,5 +22,6 @@
 - [x] Headless boot достигает `RELIC_WEAVER_BOOT_OK`.
 - [x] Gameplay suite достигает `RELIC_WEAVER_RELEASE_CHECKS_OK` без утечек ресурсов.
 - [x] Визуальный smoke test подтверждает мастерскую, настройки и бой в 360×640.
+- [x] CI останавливает экспорт при любом `ERROR:` от Godot, а не только при ошибке GDScript.
 - [ ] GitHub Actions собирает Android, Linux и Windows.
 - [ ] Тег `v1.1.1` публикует релиз с бинарниками и `SHA256SUMS.txt`.
