@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0 — Берег оборванных дорог (2026-08-27)
+
+- Added a fifth story chapter with five encounters and a new post-finale ending.
+- Added the Salt Pilgrim, Obsidian Manta and Unbound Choir with distinct combat traits.
+- Added the Needle of Freedom, Tide Hourglass and Anchor Seal, expanding Link Pulse and control builds.
+- Added a new moonlit shore environment and seven original production-ready pixel-art assets.
+- Extended build statistics, item summaries and auto-arrange evaluation for pulse power, charge speed and enemy slowdown.
+- Expanded release checks through the new final boss and all three artifact mechanics.
+
 ## 1.1.1 — Надёжный узор (2026-08-27)
 
 - Added verified temporary writes and a last-known-good backup for local saves; invalid primary data now recovers automatically.

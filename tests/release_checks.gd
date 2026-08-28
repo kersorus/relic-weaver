@@ -10,11 +10,11 @@ func _init() -> void:
 
 func _run_checks() -> void:
     _check(
-        str(ProjectSettings.get_setting("application/config/version", "")) == "1.1.1",
-        "project version is 1.1.1"
+        str(ProjectSettings.get_setting("application/config/version", "")) == "1.2.0",
+        "project version is 1.2.0"
     )
     _check(
-        FileAccess.get_file_as_string("res://VERSION").strip_edges() == "1.1.1",
+        FileAccess.get_file_as_string("res://VERSION").strip_edges() == "1.2.0",
         "VERSION file matches project metadata"
     )
     var export_presets := FileAccess.get_file_as_string("res://export_presets.cfg")
@@ -22,8 +22,9 @@ func _run_checks() -> void:
         export_presets.count("binary_format/embed_pck=true") == 2,
         "desktop exports embed PCK without release-name collisions"
     )
-    _check(GameDataRef.ITEMS.size() >= 12, "item catalog has at least 12 artifacts")
-    _check(GameDataRef.CHAPTERS.size() >= 4, "campaign has four release chapters")
+    _check(GameDataRef.ITEMS.size() >= 15, "item catalog has at least 15 artifacts")
+    _check(GameDataRef.ENEMIES.size() >= 13, "enemy catalog has at least 13 opponents")
+    _check(GameDataRef.CHAPTERS.size() >= 5, "campaign has five release chapters")
     _check(GameDataRef.tier_mult(4) > GameDataRef.tier_mult(3), "tier scaling increases")
     _check(ResourceLoader.exists("res://src/item_slot.gd"), "draggable board slot script exists")
     _check(ResourceLoader.exists("res://src/shop_drag_icon.gd"), "draggable shop offer script exists")
@@ -60,13 +61,13 @@ func _run_checks() -> void:
     await process_frame
     _check(bool(game.get_meta("boot_ok", false)), "main scene reports boot_ok")
     _check(_tree_contains_text(game, "RELIC WEAVER"), "home screen is visible")
-    _check(_tree_contains_text(game, "Версия 1.1.1"), "home screen shows the current version")
+    _check(_tree_contains_text(game, "Версия 1.2.0"), "home screen shows the current version")
     _check(game.current_bg.scale == Vector2.ONE, "pixel background remains at a stable scale")
     game.show_settings()
     await process_frame
     _check(_tree_contains_text(game, "Тактильный отклик"), "settings expose optional haptics")
     _check(_tree_contains_text(game, "Скорость боя по умолчанию"), "settings expose remembered battle speed")
-    _check(_tree_contains_text(game, "RELIC WEAVER · версия 1.1.1"), "settings render the version without a placeholder")
+    _check(_tree_contains_text(game, "RELIC WEAVER · версия 1.2.0"), "settings render the version without a placeholder")
     game.show_home()
     await process_frame
 
@@ -93,6 +94,12 @@ func _run_checks() -> void:
     _check(pattern_names.has("steel"), "steel links have a diamond marker")
     _check(pattern_names.has("arcane"), "arcane links have a ring marker")
     _check(pattern_names.has("mechanism"), "mechanism links have a double-tick marker")
+
+    game.board = _content_item_board()
+    var content_stats: Dictionary = game._calculate_stats()
+    _check(float(content_stats["pulse_mult"]) > 1.0, "Needle of Freedom increases Link Pulse power")
+    _check(float(content_stats["charge_mult"]) > 1.0, "Tide Hourglass increases Link Pulse charge")
+    _check(float(content_stats["enemy_slow"]) < 1.0, "Anchor Seal slows enemy attacks")
     game.board = original_board
     game.show_prepare()
     await process_frame
@@ -199,6 +206,28 @@ func _run_checks() -> void:
     _check(3 in game.save_data["completed_chapters"], "final chapter completion is recorded")
     _check(game.save_data["active_run"].is_empty(), "completed run is cleared")
 
+    game._start_run(4)
+    await process_frame
+    _check(_count_items(game.board) == 7, "fifth chapter grants a viable recovered loadout")
+    _check(_board_has_item(game.board, "anchor"), "fifth chapter introduces the Anchor Seal")
+    game.board[0] = {"id": "needle", "tier": 1}
+    game.board[1] = {"id": "hourglass", "tier": 1}
+    game.stage_index = 4
+    game.start_battle()
+    await process_frame
+    _check(game.enemy_id == "unbound_choir", "new campaign boss encounter is reachable")
+    _check(float(game.battle_stats["pulse_mult"]) > 1.0, "new pulse-power stat reaches combat")
+    _check(float(game.battle_stats["charge_mult"]) > 1.0, "new charge-speed stat reaches combat")
+    _check(game.enemy_attack_interval > 1.0 / float(game.enemy_data["speed"]), "Anchor Seal slows the live enemy timer")
+    game.link_pulse_charge = 0.0
+    game._add_link_pulse_charge(10.0)
+    _check(game.link_pulse_charge > 10.0, "Tide Hourglass accelerates live Link Pulse charge")
+    game._damage_enemy(game.enemy_hp + 1000.0, "content final check")
+    _check(game.run_phase == "complete", "fifth chapter final victory is persisted")
+    game._after_battle_continue()
+    await process_frame
+    _check(4 in game.save_data["completed_chapters"], "fifth chapter completion is recorded")
+
     game.free()
     for _frame in range(4):
         await process_frame
@@ -254,6 +283,16 @@ func _accessibility_link_board() -> Array:
     result[11] = {"id": "bell", "tier": 1}
     return result
 
+func _content_item_board() -> Array:
+    var result: Array = []
+    result.resize(GameDataRef.BOARD_SIZE)
+    result.fill(null)
+    result[0] = {"id": "needle", "tier": 1}
+    result[1] = {"id": "thread", "tier": 1}
+    result[5] = {"id": "hourglass", "tier": 1}
+    result[6] = {"id": "anchor", "tier": 1}
+    return result
+
 func _link_pattern_names(links: Array) -> Array[String]:
     var result: Array[String] = []
     for link in links:
@@ -267,6 +306,12 @@ func _first_item_index(items: Array) -> int:
         if items[index] != null:
             return index
     return -1
+
+func _board_has_item(items: Array, id: String) -> bool:
+    for item in items:
+        if item != null and str(item.get("id", "")) == id:
+            return true
+    return false
 
 func _tree_contains_text(node: Node, expected: String) -> bool:
     if node is Label and expected in node.text:

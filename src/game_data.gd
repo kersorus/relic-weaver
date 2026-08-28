@@ -66,6 +66,21 @@ const ITEMS := {
         "name": "Веретено узлов", "kind": "Реликвия", "icon": "res://assets/items/spindle.png",
         "desc": "Повышает урон и здоровье. Каждая соседняя нить усиливает оба бонуса.",
         "base_cost": 11, "weight": 6, "tags": ["link", "blood", "relic"]
+    },
+    "needle": {
+        "name": "Игла свободы", "kind": "Реликвия", "icon": "res://assets/items/needle.png",
+        "desc": "Повышает урон и силу Импульса связи. Соседние нити усиливают оба эффекта.",
+        "base_cost": 11, "weight": 6, "tags": ["steel", "arcane", "relic"]
+    },
+    "hourglass": {
+        "name": "Часы отлива", "kind": "Механизм", "icon": "res://assets/items/hourglass.png",
+        "desc": "Повышают скорость атаки и ускоряют заряд Импульса связи.",
+        "base_cost": 10, "weight": 7, "tags": ["clock", "motion", "arcane"]
+    },
+    "anchor": {
+        "name": "Якорная печать", "kind": "Защита", "icon": "res://assets/items/anchor.png",
+        "desc": "Повышает здоровье и замедляет атаки противника.",
+        "base_cost": 10, "weight": 7, "tags": ["steel", "guard", "relic"]
     }
 }
 
@@ -105,6 +120,15 @@ const CHAPTERS := [
         "intro": "За последней страницей архива оказалась лестница вниз. Там, где город слышал бой часов, древний станок всё это время переплетал чужие решения — и называл получившийся узор судьбой.",
         "outro": "Под маской Первого не было лица — только узел из тысяч несделанных выборов. Ты перерезал управляющую нить. Мир не стал прежним, но дороги снова начали вести вперёд, а связь отныне принадлежала тем, кто её создаёт.",
         "enemies": ["thread_wraith", "clock_husk", "brass_seraph", "bound_mage", "first_weaver"]
+    },
+    {
+        "name": "V. Берег оборванных дорог",
+        "short": "Оборванный берег",
+        "background": "res://assets/backgrounds/severed_shore.png",
+        "prop": "res://assets/items/anchor.png",
+        "intro": "После гибели Первого дороги вернулись — но не все нашли сушу. На дальнем берегу каменные тракты уходят прямо в море, а оборванные связи зовут путников голосами тех, кто так и не выбрал путь.",
+        "outro": "Три маски пели о единственной верной дороге. Ты разбил их хор и оставил берегу тысячу троп вместо одной. Впервые связь не потребовала хозяина — только тех, кто готов идти рядом.",
+        "enemies": ["salt_pilgrim", "obsidian_manta", "salt_pilgrim", "brass_seraph", "unbound_choir"]
     }
 ]
 
@@ -118,7 +142,10 @@ const ENEMIES := {
     "bound_mage": {"name":"Связанный маг", "sprite":"res://assets/actors/bound_mage.png", "hp":300.0, "atk":24.0, "speed":0.84, "reward":18, "trait":"Каждая четвёртая атака наносит почти двойной урон"},
     "thread_wraith": {"name":"Нитяной призрак", "sprite":"res://assets/actors/thread_wraith.png", "hp":205.0, "atk":21.0, "speed":1.10, "reward":14, "trait":"Каждый пятый удар уходит в нить"},
     "brass_seraph": {"name":"Латунный серафим", "sprite":"res://assets/actors/brass_seraph.png", "hp":265.0, "atk":25.0, "speed":0.82, "reward":17, "trait":"Латунный панцирь: −18% урона"},
-    "first_weaver": {"name":"Первый Связующий", "sprite":"res://assets/actors/first_weaver.png", "hp":440.0, "atk":30.0, "speed":0.90, "reward":26, "trait":"Каждая третья атака сильнее; на половине здоровья ускоряется"}
+    "first_weaver": {"name":"Первый Связующий", "sprite":"res://assets/actors/first_weaver.png", "hp":440.0, "atk":30.0, "speed":0.90, "reward":26, "trait":"Каждая третья атака сильнее; на половине здоровья ускоряется"},
+    "salt_pilgrim": {"name":"Соляной паломник", "sprite":"res://assets/actors/salt_pilgrim.png", "hp":245.0, "atk":23.0, "speed":0.82, "reward":17, "trait":"Соляной доспех: −12% урона; каждый четвёртый удар сильнее"},
+    "obsidian_manta": {"name":"Обсидиановая манта", "sprite":"res://assets/actors/obsidian_manta.png", "hp":225.0, "atk":20.0, "speed":1.15, "reward":17, "trait":"Каждый шестой обычный удар проходит сквозь её осколки"},
+    "unbound_choir": {"name":"Несвязанный хор", "sprite":"res://assets/actors/unbound_choir.png", "hp":520.0, "atk":32.0, "speed":0.92, "reward":32, "trait":"Каждая третья атака сильнее; на половине здоровья хор ускоряется"}
 }
 
 static func tier_name(tier: int) -> String:

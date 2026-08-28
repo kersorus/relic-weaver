@@ -6,7 +6,7 @@ const LinkLayerRef = preload("res://src/link_layer.gd")
 const ItemSlotRef = preload("res://src/item_slot.gd")
 const ShopDragIconRef = preload("res://src/shop_drag_icon.gd")
 
-const GAME_VERSION := "1.1.1"
+const GAME_VERSION := "1.2.0"
 
 const C_BG := Color("181b25")
 const C_PANEL := Color("242936")
@@ -450,6 +450,8 @@ func _start_run(idx: int) -> void:
         board[12] = {"id":"sigil", "tier":1}
     if chapter_index >= 3:
         board[13] = {"id":"lantern", "tier":1}
+    if chapter_index >= 4:
+        board[14] = {"id":"anchor", "tier":1}
     _roll_shop(true)
     save_data["runs"] = int(save_data["runs"]) + 1
     _persist_active_run("prepare")
@@ -492,7 +494,10 @@ func show_prepare() -> void:
 
     var grid_panel := _panel()
     var board_canvas := Control.new()
-    board_canvas.custom_minimum_size = Vector2(633, 505)
+    # Keep the complete board and its action row visible at the top of a
+    # 360x640 viewport. The shop still scrolls below, but no control is left
+    # awkwardly clipped at the initial scroll position.
+    board_canvas.custom_minimum_size = Vector2(568, 453)
     var grid := GridContainer.new(); grid.columns = GameDataRef.BOARD_COLS; grid.add_theme_constant_override("h_separation", 7); grid.add_theme_constant_override("v_separation", 7)
     grid.position = Vector2.ZERO
     grid.size = board_canvas.custom_minimum_size
@@ -506,7 +511,9 @@ func show_prepare() -> void:
     link_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     link_layer.configure(_board_links(), selected_slot, _reduced_motion())
     board_canvas.add_child(link_layer)
-    grid_panel.add_child(_margin(board_canvas, 12)); v.add_child(grid_panel)
+    var board_center := CenterContainer.new()
+    board_center.add_child(board_canvas)
+    grid_panel.add_child(_margin(board_center, 12)); v.add_child(grid_panel)
     v.add_child(_label("Связи читаются без цвета: нить — точка, сталь — ромб, магия — кольцо, механизм — двойная риска.", 16, C_MUTED, HORIZONTAL_ALIGNMENT_CENTER))
 
     v.add_child(_selected_item_panel())
@@ -562,7 +569,7 @@ func _board_links() -> Array:
             elif _items_share_tag(left_id, right_id, "steel"):
                 link_color = C_GOLD
                 link_pattern = "steel"
-            elif (left_id == "cog" and right_id == "rune") or (left_id == "rune" and right_id == "cog"):
+            elif (_item_has_tag(left_id, "clock") and _item_has_tag(right_id, "rune")) or (_item_has_tag(left_id, "rune") and _item_has_tag(right_id, "clock")):
                 link_color = Color("7eb9ff")
                 link_pattern = "mechanism"
             if link_color != Color.TRANSPARENT:
@@ -577,6 +584,9 @@ func _board_links() -> Array:
 
 func _items_share_tag(left_id: String, right_id: String, tag: String) -> bool:
     return tag in GameDataRef.ITEMS[left_id]["tags"] and tag in GameDataRef.ITEMS[right_id]["tags"]
+
+func _item_has_tag(id: String, tag: String) -> bool:
+    return tag in GameDataRef.ITEMS[id]["tags"]
 
 func _build_enemy_preview() -> PanelContainer:
     var id := str(GameDataRef.CHAPTERS[chapter_index]["enemies"][stage_index])
@@ -613,12 +623,13 @@ func _build_stats_panel(stats: Dictionary) -> PanelContainer:
     box.add_child(_label("Урон %d  •  здоровье %d  •  атак/с %.2f" % [int(stats["attack"]), int(stats["max_hp"]), float(stats["attack_speed"])], 17, C_TEXT))
     box.add_child(_label("Броня %.1f  •  крит %d%%  •  уклон %d%%  •  вампиризм %d%%" % [float(stats["armor"]), int(float(stats["crit"]) * 100.0), int(float(stats["dodge"]) * 100.0), int(float(stats["lifesteal"]) * 100.0)], 16, C_MUTED))
     box.add_child(_label("Магия %.1f  •  восстановление %.1f/с  •  общий урон +%d%%" % [float(stats["magic"]), float(stats["regen"]), int((float(stats["damage_mult"]) - 1.0) * 100.0)], 16, C_MUTED))
+    box.add_child(_label("Импульс +%d%%  •  заряд +%d%%  •  скорость врага −%d%%" % [int((float(stats["pulse_mult"]) - 1.0) * 100.0), int((float(stats["charge_mult"]) - 1.0) * 100.0), int((1.0 - float(stats["enemy_slow"])) * 100.0)], 16, C_MUTED))
     panel.add_child(_margin(box, 12))
     return panel
 
 func _make_slot(index: int) -> Button:
     var b := ItemSlotRef.new()
-    b.custom_minimum_size = Vector2(121, 121)
+    b.custom_minimum_size = Vector2(108, 108)
     b.expand_icon = true
     b.add_theme_font_size_override("font_size", 15)
     var chosen := index == selected_slot
@@ -808,6 +819,12 @@ func _item_effect_summary(id: String, tier: int, index := -1) -> String:
             summary = "+%.1f%% уклонения • усиление после уклонения" % (2.5 * mult)
         "spindle":
             summary = "+%d урона • +%d здоровья" % [int(4.0 * mult * (1.0 + threads * 0.30)), int(13.0 * mult * (1.0 + threads * 0.20))]
+        "needle":
+            summary = "+%d урона • Импульс +%d%%" % [int(5.0 * mult * (1.0 + threads * 0.20)), int(10.0 * mult * (1.0 + threads * 0.15))]
+        "hourglass":
+            summary = "+%.2f атак/с • заряд Импульса +%d%%" % [0.065 * mult, int(8.0 * mult)]
+        "anchor":
+            summary = "+%d здоровья • враг атакует на %.1f%% медленнее" % [int(18.0 * mult), 3.5 * mult]
     return summary
 
 func _dismantle_selected() -> void:
@@ -894,6 +911,9 @@ func _build_score() -> float:
         + float(stats["bell"])
         + float(stats["link_score"]) * 4.0
         + (float(stats["damage_mult"]) - 1.0) * 120.0
+        + (float(stats["pulse_mult"]) - 1.0) * 80.0
+        + (float(stats["charge_mult"]) - 1.0) * 70.0
+        + (1.0 - float(stats["enemy_slow"])) * 100.0
     )
 
 func _roll_shop(initial := false) -> void:
@@ -1101,7 +1121,8 @@ func _calculate_stats() -> Dictionary:
         "max_hp": 120.0 * (1.0 + 0.06 * int(save_data["vital_knot"])),
         "armor": 0.0, "attack_speed": 1.0, "crit": 0.05, "dodge": 0.0,
         "lifesteal": 0.0, "regen": 0.0, "magic": 0.0, "bell": 0.0,
-        "blade_proc": 0.0, "link_score": 0.0, "damage_mult": 1.0, "guard_mult": 1.0
+        "blade_proc": 0.0, "link_score": 0.0, "damage_mult": 1.0, "guard_mult": 1.0,
+        "pulse_mult": 1.0, "charge_mult": 1.0, "enemy_slow": 1.0
     }
     for i in range(board.size()):
         var item = board[i]
@@ -1143,6 +1164,15 @@ func _calculate_stats() -> Dictionary:
             s["dodge"] += 0.025 * m
         elif id == "spindle":
             s["attack"] += 4.0 * m * (1.0 + linked * 0.30); s["max_hp"] += 13.0 * m * (1.0 + linked * 0.20)
+        elif id == "needle":
+            s["attack"] += 5.0 * m * (1.0 + linked * 0.20)
+            s["pulse_mult"] *= 1.0 + 0.10 * m * (1.0 + linked * 0.15)
+        elif id == "hourglass":
+            s["attack_speed"] += 0.065 * m
+            s["charge_mult"] *= 1.0 + 0.08 * m
+        elif id == "anchor":
+            s["max_hp"] += 18.0 * m
+            s["enemy_slow"] *= maxf(0.72, 1.0 - 0.035 * m)
     s["crit"] = min(0.62, float(s["crit"]))
     s["dodge"] = min(0.42, float(s["dodge"]))
     return s
@@ -1165,7 +1195,7 @@ func start_battle() -> void:
     regen_timer = 1.0
     enemy_hit_count = 0; hero_attack_count = 0; enemy_stun = 0.0; mirror_charge = false
     hero_attack_interval = maxf(0.25, 1.0 / float(battle_stats["attack_speed"]))
-    enemy_attack_interval = 1.0 / float(enemy_data["speed"])
+    enemy_attack_interval = 1.0 / (float(enemy_data["speed"]) * float(battle_stats["enemy_slow"]))
     link_pulse_charge = 25.0
     battle_speed = float(_settings().get("battle_speed", 1.0))
     battle_paused = false
@@ -1213,7 +1243,7 @@ func start_battle() -> void:
     battle_continue_button = _button("...", _noop, 68, true); battle_continue_button.visible=false; v.add_child(battle_continue_button)
     battle_active = true
     _update_battle_ui()
-    var opening_caption := "ПЕРВЫЙ УЗЕЛ" if enemy_id == "first_weaver" else "СВЯЗЬ"
+    var opening_caption := "ПЕРВЫЙ УЗЕЛ" if enemy_id == "first_weaver" else ("ТРИ ГОЛОСА" if enemy_id == "unbound_choir" else "СВЯЗЬ")
     _spawn_battle_caption(opening_caption, Vector2(330, 340), C_ACCENT)
 
 func _actor_texture(path: String, pos: Vector2) -> TextureRect:
@@ -1247,7 +1277,7 @@ func _build_link_pulse_panel() -> PanelContainer:
     copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     copy.add_theme_constant_override("separation", 5)
     copy.add_child(_label("Импульс связи", 21, C_ACCENT))
-    copy.add_child(_label("Заряжается в бою. Наносит урон, лечит героя и сбивает атаку врага.", 16, C_MUTED))
+    copy.add_child(_label("Заряжается в бою. Наносит урон, лечит героя и сбивает атаку; артефакты могут усилить эффект.", 16, C_MUTED))
     link_pulse_bar = _hp_bar(100.0, link_pulse_charge, C_ACCENT)
     link_pulse_bar.custom_minimum_size.y = 14
     copy.add_child(link_pulse_bar)
@@ -1333,6 +1363,8 @@ func _battle_tick(delta: float) -> void:
         var speed := float(enemy_data["speed"])
         if enemy_id == "clock_husk" and enemy_hp < enemy_max_hp * 0.5: speed *= 1.35
         if enemy_id == "first_weaver" and enemy_hp < enemy_max_hp * 0.5: speed *= 1.22
+        if enemy_id == "unbound_choir" and enemy_hp < enemy_max_hp * 0.5: speed *= 1.28
+        speed *= float(battle_stats["enemy_slow"])
         enemy_attack_interval = 1.0 / speed
         enemy_timer = enemy_attack_interval
     _update_battle_ui()
@@ -1361,7 +1393,16 @@ func _hero_attack() -> void:
     if enemy_id == "road_guard": dmg *= 0.86
     if enemy_id == "old_warden" and rng.randf() < 0.20: dmg *= 0.55
     if enemy_id == "brass_seraph": dmg *= 0.82
+    if enemy_id == "salt_pilgrim": dmg *= 0.88
     var thread_slip := enemy_id == "thread_wraith" and hero_attack_count % 5 == 0
+    var manta_slip := enemy_id == "obsidian_manta" and hero_attack_count % 6 == 0
+    if manta_slip:
+        _animate_attack(hero_actor, 22.0)
+        _animate_dodge(enemy_actor)
+        _floating_text("ОСКОЛКИ", enemy_actor, C_ACCENT)
+        battle_log_label.text = "Манта рассыпается перед ударом и собирается вновь."
+        _add_link_pulse_charge(8.0)
+        return
     if thread_slip:
         dmg *= 0.25
     var attack_name := "Удар скользит по нити" if thread_slip else ("Рассечение" if blade_triggered else ("Критический удар" if critical else "Удар"))
@@ -1393,11 +1434,15 @@ func _enemy_attack() -> void:
     if enemy_id == "chapel_shade" and enemy_hit_count % 3 == 0: raw *= 1.65
     if enemy_id == "ink_scribe": raw *= 1.0 + min(0.7, enemy_hit_count * 0.035)
     if enemy_id == "bound_mage" and enemy_hit_count % 4 == 0: raw *= 1.85
+    if enemy_id == "salt_pilgrim" and enemy_hit_count % 4 == 0: raw *= 1.55
     if enemy_id == "thread_wraith" and enemy_hit_count % 4 == 0:
         regen_timer += 1.5
     if enemy_id == "first_weaver" and enemy_hit_count % 3 == 0:
         raw *= 1.55
         _spawn_battle_caption("НОВЫЙ УЗОР", Vector2(330, 340), Color("b993ff"))
+    if enemy_id == "unbound_choir" and enemy_hit_count % 3 == 0:
+        raw *= 1.65
+        _spawn_battle_caption("ТРЕТИЙ ГОЛОС", Vector2(330, 340), Color("8fdcff"))
     var reduced: float = maxf(1.0, raw - float(battle_stats["armor"])) * float(battle_stats["guard_mult"])
     hero_hp = maxf(0.0, hero_hp - reduced)
     battle_log_label.text = "%s наносит %d урона." % [enemy_data["name"], int(reduced)]
@@ -1553,7 +1598,7 @@ func _screen_flash(color: Color, alpha: float) -> void:
 func _add_link_pulse_charge(amount: float) -> void:
     if not battle_active:
         return
-    link_pulse_charge = minf(100.0, link_pulse_charge + amount)
+    link_pulse_charge = minf(100.0, link_pulse_charge + amount * float(battle_stats.get("charge_mult", 1.0)))
     _update_link_pulse_ui()
 
 func _use_link_pulse() -> void:
@@ -1561,7 +1606,7 @@ func _use_link_pulse() -> void:
         return
     link_pulse_charge = 0.0
     enemy_stun = maxf(enemy_stun, 0.85)
-    var damage := float(battle_stats["attack"]) * 1.35 + float(battle_stats["magic"]) * 0.65 + float(battle_stats["link_score"]) * 1.8
+    var damage := (float(battle_stats["attack"]) * 1.35 + float(battle_stats["magic"]) * 0.65 + float(battle_stats["link_score"]) * 1.8) * float(battle_stats.get("pulse_mult", 1.0))
     var healing := minf(hero_max_hp - hero_hp, hero_max_hp * 0.06)
     hero_hp += healing
     _spawn_battle_caption("ИМПУЛЬС", Vector2(330, 330), C_ACCENT)
