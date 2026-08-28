@@ -21,5 +21,5 @@
 
 - [x] Godot 4.3 import, GDScript lint, boot и gameplay suite проходят локально.
 - [x] Визуальный smoke test подтверждает новую главу, мастерскую и бой в 360×640.
-- [ ] GitHub Actions собирает Android, Linux и Windows.
+- [x] GitHub Actions run №20 собирает Android, Linux и Windows.
 - [ ] Тег `v1.2.0` публикует релиз с бинарниками и `SHA256SUMS.txt`.
